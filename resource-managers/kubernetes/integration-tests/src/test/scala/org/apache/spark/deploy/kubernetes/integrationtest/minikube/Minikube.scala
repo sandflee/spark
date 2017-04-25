@@ -16,19 +16,11 @@
  */
 package org.apache.spark.deploy.kubernetes.integrationtest.minikube
 
-import java.io.{BufferedReader, InputStreamReader}
 import java.nio.file.Paths
-import java.util.concurrent.TimeUnit
-import java.util.regex.Pattern
-import javax.net.ssl.X509TrustManager
 
 import io.fabric8.kubernetes.client.{ConfigBuilder, DefaultKubernetesClient}
-import io.fabric8.kubernetes.client.internal.SSLUtils
-import scala.collection.mutable.ArrayBuffer
-import scala.reflect.ClassTag
 
-import org.apache.spark.deploy.kubernetes.integrationtest.Util
-import org.apache.spark.deploy.rest.kubernetes.v1.HttpClientUtil
+import org.apache.spark.deploy.kubernetes.integrationtest.ProcessUtils
 import org.apache.spark.internal.Logging
 import org.apache.spark.util.Utils
 
@@ -116,7 +108,7 @@ private[spark] object Minikube extends Logging {
         throw new IllegalStateException("Failed to make the Minikube binary executable.")
       }
     }
-    Util.executeProcess(Array(MINIKUBE_EXECUTABLE_DEST.getAbsolutePath, action) ++ args,
+    ProcessUtils.executeProcess(Array(MINIKUBE_EXECUTABLE_DEST.getAbsolutePath, action) ++ args,
       MINIKUBE_STARTUP_TIMEOUT_SECONDS)
   }
 }

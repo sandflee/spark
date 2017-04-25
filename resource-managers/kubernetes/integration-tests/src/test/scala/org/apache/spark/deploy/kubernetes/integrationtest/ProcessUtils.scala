@@ -21,11 +21,14 @@ import java.util.concurrent.TimeUnit
 
 import scala.collection.mutable.ArrayBuffer
 
-import org.apache.spark.deploy.kubernetes.integrationtest.minikube.Minikube.logInfo
 import org.apache.spark.internal.Logging
 import org.apache.spark.util.Utils
 
-object Util extends Logging {
+/**
+ * ProcessUtils is used to run a command and return the output if it
+ * completes within timeout seconds.
+ */
+object ProcessUtils extends Logging {
   def executeProcess(fullCommand: Array[String], timeout: Long): Seq[String] = {
     val pb = new ProcessBuilder().command(fullCommand: _*)
     pb.redirectErrorStream(true)

@@ -67,7 +67,7 @@ In order to run against any cluster, use the following:
 build/mvn integration-test \
     -Pkubernetes -Pkubernetes-integration-tests \
     -pl resource-managers/kubernetes/integration-tests -am
-    -DextraScalaTestArgs="-Dspark.docker.test.master=k8s://https://<master> -Dspark.docker.test.driverImage=<driver-image> -Dspark.docker.test.executorImage=<executor-image>"
+    -DextraScalaTestArgs="-Dspark.kubernetes.test.master=k8s://https://<master> -Dspark.docker.test.driverImage=<driver-image> -Dspark.docker.test.executorImage=<executor-image>"
 
 # Preserve the Minikube VM
 

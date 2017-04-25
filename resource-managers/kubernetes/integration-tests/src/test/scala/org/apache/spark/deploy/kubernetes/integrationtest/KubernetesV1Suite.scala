@@ -18,6 +18,8 @@ package org.apache.spark.deploy.kubernetes.integrationtest
 
 import java.util.concurrent.TimeUnit
 
+import scala.collection.JavaConverters._
+
 import com.google.common.collect.ImmutableList
 import com.google.common.util.concurrent.SettableFuture
 import io.fabric8.kubernetes.api.model.Pod
@@ -25,7 +27,6 @@ import io.fabric8.kubernetes.client.{KubernetesClientException, Watcher}
 import io.fabric8.kubernetes.client.Watcher.Action
 import org.scalatest.{BeforeAndAfter, DoNotDiscover}
 import org.scalatest.concurrent.Eventually
-import scala.collection.JavaConverters._
 
 import org.apache.spark.{SparkConf, SparkException, SparkFunSuite}
 import org.apache.spark.deploy.kubernetes.SSLUtils
@@ -38,13 +39,14 @@ import org.apache.spark.status.api.v1.{ApplicationStatus, StageStatus}
 import org.apache.spark.util.Utils
 
 @DoNotDiscover
-private[spark] class KubernetesV1Suite extends SparkFunSuite with BeforeAndAfter {
+private[spark] class KubernetesV1Suite(kubernetesTestClient: KubernetesTestClient)
+  extends SparkFunSuite with BeforeAndAfter {
 
   private var kubernetesTestComponents: KubernetesTestComponents = _
   private var sparkConf: SparkConf = _
 
   override def beforeAll(): Unit = {
-    kubernetesTestComponents = new KubernetesTestComponents(KubernetesClient.getClient())
+    kubernetesTestComponents = new KubernetesTestComponents(kubernetesTestClient.getClient())
     kubernetesTestComponents.createNamespace()
   }
 
@@ -168,7 +170,7 @@ private[spark] class KubernetesV1Suite extends SparkFunSuite with BeforeAndAfter
   }
 
   test("Enable SSL on the driver submit server") {
-    assume(KubernetesClient.testBackend == TestBackend.SingleNode)
+    assume(kubernetesTestClient.testBackend == KubernetesTestBackend.SingleNode)
 
     val (keyStoreFile, trustStoreFile) = SSLUtils.generateKeyStoreTrustStorePair(
       Minikube.getMinikubeIp,
@@ -190,7 +192,7 @@ private[spark] class KubernetesV1Suite extends SparkFunSuite with BeforeAndAfter
   }
 
   test("Enable SSL on the driver submit server using PEM files") {
-    assume(KubernetesClient.testBackend == TestBackend.SingleNode)
+    assume(kubernetesTestClient.testBackend == KubernetesTestBackend.SingleNode)
 
     val (keyPem, certPem) = SSLUtils.generateKeyCertPemPair(Minikube.getMinikubeIp)
     sparkConf.set(DRIVER_SUBMIT_SSL_KEY_PEM, s"file://${keyPem.getAbsolutePath}")
@@ -205,7 +207,7 @@ private[spark] class KubernetesV1Suite extends SparkFunSuite with BeforeAndAfter
   }
 
   test("Added files should exist on the driver.") {
-    assume(KubernetesClient.testBackend == TestBackend.SingleNode)
+    assume(kubernetesTestClient.testBackend == KubernetesTestBackend.SingleNode)
 
     sparkConf.set("spark.files", KubernetesSuite.TEST_EXISTENCE_FILE.getAbsolutePath)
     sparkConf.setAppName("spark-file-existence-test")
@@ -263,7 +265,7 @@ private[spark] class KubernetesV1Suite extends SparkFunSuite with BeforeAndAfter
   }
 
   test("Use external URI provider") {
-    assume(KubernetesClient.testBackend == TestBackend.SingleNode)
+    assume(kubernetesTestClient.testBackend == KubernetesTestBackend.SingleNode)
 
     val externalUriProviderWatch =
       new ExternalUriProviderWatch(kubernetesTestComponents.kubernetesClient)
@@ -296,7 +298,7 @@ private[spark] class KubernetesV1Suite extends SparkFunSuite with BeforeAndAfter
   }
 
   test("Mount the Kubernetes credentials onto the driver pod") {
-    assume(KubernetesClient.testBackend == TestBackend.SingleNode)
+    assume(kubernetesTestClient.testBackend == KubernetesTestBackend.SingleNode)
 
     sparkConf.set(KUBERNETES_DRIVER_CA_CERT_FILE,
       kubernetesTestComponents.clientConfig.getCaCertFile)

@@ -111,42 +111,41 @@ private[spark] class KubernetesTestComponents(defaultClient: DefaultKubernetesCl
   }
 }
 
-object TestBackend extends Enumeration {
+object KubernetesTestBackend extends Enumeration {
   val SingleNode, MultiNode = Value
 }
 
-object KubernetesClient {
+/**
+ * Creates and holds a Kubernetes client for executing tests.
+ * When master and driver/executor images are supplied, we return a client
+ * for that cluster. By default, we return a Minikube client
+ */
+
+class KubernetesTestClient {
   var defaultClient: DefaultKubernetesClient = _
-  var testBackend: TestBackend.Value = _
+  var testBackend: KubernetesTestBackend.Value = _
+
+  Option(System.getProperty("spark.kubernetes.test.master")).map {
+    master =>
+      var k8ConfBuilder = new ConfigBuilder()
+        .withApiVersion("v1")
+        .withMasterUrl(resolveK8sMaster(master))
+      val k8ClientConfig = k8ConfBuilder.build
+      defaultClient = new DefaultKubernetesClient(k8ClientConfig)
+      testBackend = KubernetesTestBackend.MultiNode
+  }.getOrElse {
+    Minikube.startMinikube()
+    new SparkDockerImageBuilder(Minikube.getDockerEnv).buildSparkDockerImages()
+    defaultClient = Minikube.getKubernetesClient
+    testBackend = KubernetesTestBackend.SingleNode
+  }
 
   def getClient(): DefaultKubernetesClient = {
-    if (defaultClient == null) {
-      createDefaultClient
-    }
     defaultClient
   }
 
-  private def createDefaultClient(): Unit = {
-    System.getProperty("spark.docker.test.master") match {
-      case null =>
-        Minikube.startMinikube()
-        new SparkDockerImageBuilder(Minikube.getDockerEnv).buildSparkDockerImages()
-        defaultClient = Minikube.getKubernetesClient
-        testBackend = TestBackend.SingleNode
-
-      case _ =>
-        val master = System.getProperty("spark.docker.test.master")
-        var k8ConfBuilder = new ConfigBuilder()
-          .withApiVersion("v1")
-          .withMasterUrl(resolveK8sMaster(master))
-        val k8ClientConfig = k8ConfBuilder.build
-        defaultClient = new DefaultKubernetesClient(k8ClientConfig)
-        testBackend = TestBackend.MultiNode
-    }
-  }
-
   def cleanUp(): Unit = {
-    if (testBackend == TestBackend.SingleNode
+    if (testBackend == KubernetesTestBackend.SingleNode
       && !System.getProperty("spark.docker.test.persistMinikube", "false").toBoolean) {
       Minikube.deleteMinikube()
     }
