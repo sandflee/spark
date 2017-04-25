@@ -22,13 +22,15 @@ import javax.net.ssl.X509TrustManager
 import scala.collection.JavaConverters._
 import scala.reflect.ClassTag
 
-import io.fabric8.kubernetes.client.{BaseClient, DefaultKubernetesClient}
+import io.fabric8.kubernetes.client.{BaseClient, ConfigBuilder, DefaultKubernetesClient}
 import io.fabric8.kubernetes.client.internal.SSLUtils
 import okhttp3.OkHttpClient
 import org.scalatest.concurrent.Eventually
 
 import org.apache.spark.SparkConf
 import org.apache.spark.deploy.kubernetes.config._
+import org.apache.spark.deploy.kubernetes.integrationtest.docker.SparkDockerImageBuilder
+import org.apache.spark.deploy.kubernetes.integrationtest.minikube.Minikube
 import org.apache.spark.deploy.rest.kubernetes.v1.HttpClientUtil
 
 private[spark] class KubernetesTestComponents(defaultClient: DefaultKubernetesClient) {
@@ -107,5 +109,46 @@ private[spark] class KubernetesTestComponents(defaultClient: DefaultKubernetesCl
       field.setAccessible(false)
     }
   }
+}
 
+object TestBackend extends Enumeration {
+  val SingleNode, MultiNode = Value
+}
+
+object KubernetesClient {
+  var defaultClient: DefaultKubernetesClient = _
+  var testBackend: TestBackend.Value = _
+
+  def getClient(): DefaultKubernetesClient = {
+    if (defaultClient == null) {
+      createDefaultClient
+    }
+    defaultClient
+  }
+
+  private def createDefaultClient(): Unit = {
+    System.getProperty("spark.docker.test.master") match {
+      case null =>
+        Minikube.startMinikube()
+        new SparkDockerImageBuilder(Minikube.getDockerEnv).buildSparkDockerImages()
+        defaultClient = Minikube.getKubernetesClient
+        testBackend = TestBackend.SingleNode
+
+      case _ =>
+        val master = System.getProperty("spark.docker.test.master")
+        var k8ConfBuilder = new ConfigBuilder()
+          .withApiVersion("v1")
+          .withMasterUrl(resolveK8sMaster(master))
+        val k8ClientConfig = k8ConfBuilder.build
+        defaultClient = new DefaultKubernetesClient(k8ClientConfig)
+        testBackend = TestBackend.MultiNode
+    }
+  }
+
+  def cleanUp(): Unit = {
+    if (testBackend == TestBackend.SingleNode
+      && !System.getProperty("spark.docker.test.persistMinikube", "false").toBoolean) {
+      Minikube.deleteMinikube()
+    }
+  }
 }
