@@ -36,7 +36,7 @@ private[spark] class KubernetesV2Suite extends SparkFunSuite with BeforeAndAfter
   private var resourceStagingServerLauncher: ResourceStagingServerLauncher = _
 
   override def beforeAll(): Unit = {
-    kubernetesTestComponents = new KubernetesTestComponents
+    kubernetesTestComponents = new KubernetesTestComponents(KubernetesClient.getClient())
     resourceStagingServerLauncher = new ResourceStagingServerLauncher(
       kubernetesTestComponents.kubernetesClient.inNamespace(kubernetesTestComponents.namespace))
   }
@@ -54,11 +54,15 @@ private[spark] class KubernetesV2Suite extends SparkFunSuite with BeforeAndAfter
   }
 
   test("Use submission v2.") {
+    assume(KubernetesClient.testBackend == TestBackend.SingleNode)
+
     launchStagingServer(SSLOptions())
     runSparkAppAndVerifyCompletion(KubernetesSuite.SUBMITTER_LOCAL_MAIN_APP_RESOURCE)
   }
 
   test("Enable SSL on the submission server") {
+    assume(KubernetesClient.testBackend == TestBackend.SingleNode)
+
     val (keyStore, trustStore) = SSLUtils.generateKeyStoreTrustStorePair(
       ipAddress = Minikube.getMinikubeIp,
       keyStorePassword = "keyStore",
@@ -81,6 +85,8 @@ private[spark] class KubernetesV2Suite extends SparkFunSuite with BeforeAndAfter
   }
 
   test("Use container-local resources without the resource staging server") {
+    assume(KubernetesClient.testBackend == TestBackend.SingleNode)
+
     sparkConf.setJars(Seq(
       KubernetesSuite.CONTAINER_LOCAL_MAIN_APP_RESOURCE,
       KubernetesSuite.CONTAINER_LOCAL_HELPER_JAR_PATH))
@@ -88,6 +94,8 @@ private[spark] class KubernetesV2Suite extends SparkFunSuite with BeforeAndAfter
   }
 
   private def launchStagingServer(resourceStagingServerSslOptions: SSLOptions): Unit = {
+    assume(KubernetesClient.testBackend == TestBackend.SingleNode)
+
     val resourceStagingServerPort = resourceStagingServerLauncher.launchStagingServer(
       resourceStagingServerSslOptions)
     val resourceStagingServerUriScheme = if (resourceStagingServerSslOptions.enabled) {
@@ -96,7 +104,8 @@ private[spark] class KubernetesV2Suite extends SparkFunSuite with BeforeAndAfter
       "http"
     }
     sparkConf.set(RESOURCE_STAGING_SERVER_URI,
-      s"$resourceStagingServerUriScheme://${Minikube.getMinikubeIp}:$resourceStagingServerPort")
+      s"$resourceStagingServerUriScheme://" +
+        s"${Minikube.getMinikubeIp}:$resourceStagingServerPort")
   }
 
   private def runSparkAppAndVerifyCompletion(appResource: String): Unit = {

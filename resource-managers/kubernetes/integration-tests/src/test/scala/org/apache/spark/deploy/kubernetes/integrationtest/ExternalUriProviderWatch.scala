@@ -32,7 +32,8 @@ import org.apache.spark.internal.Logging
  * for tests - essentially forces the service to revert back to being exposed
  * on NodePort.
  */
-private[spark] class ExternalUriProviderWatch(kubernetesClient: KubernetesClient)
+private[spark] class ExternalUriProviderWatch(
+  kubernetestTestComponents: KubernetesTestComponents)
     extends Watcher[Service] with Logging {
 
   // Visible for testing
@@ -45,7 +46,10 @@ private[spark] class ExternalUriProviderWatch(kubernetesClient: KubernetesClient
           .asScala
           .get(ANNOTATION_PROVIDE_EXTERNAL_URI).foreach { _ =>
         if (!annotationSet.getAndSet(true)) {
-          val nodePortService = kubernetesClient.services().withName(service.getMetadata.getName)
+          val nodePortService = kubernetestTestComponents
+            .kubernetesClient
+            .services()
+            .withName(service.getMetadata.getName)
             .edit()
               .editSpec()
                 .withType("NodePort")
@@ -58,8 +62,13 @@ private[spark] class ExternalUriProviderWatch(kubernetesClient: KubernetesClient
             .find(_.getName == SUBMISSION_SERVER_PORT_NAME)
             .map(_.getNodePort)
             .getOrElse(throw new IllegalStateException("Submission server port not found."))
-          val resolvedNodePortUri = s"http://${Minikube.getMinikubeIp}:$submissionServerPort"
-          kubernetesClient.services().withName(service.getMetadata.getName).edit()
+          val resolvedNodePortUri = s"http://" +
+            s"${Minikube.getMinikubeIp}:$submissionServerPort"
+          kubernetestTestComponents
+            .kubernetesClient
+            .services()
+            .withName(service.getMetadata.getName)
+            .edit()
             .editMetadata()
               .addToAnnotations(ANNOTATION_RESOLVED_EXTERNAL_URI, resolvedNodePortUri)
               .endMetadata()
