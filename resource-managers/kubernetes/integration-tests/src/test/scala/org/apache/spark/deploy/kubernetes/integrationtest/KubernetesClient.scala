@@ -17,18 +17,11 @@
 
 package org.apache.spark.deploy.kubernetes.integrationtest
 
-import java.nio.file.Paths
-import javax.net.ssl.X509TrustManager
-
-import scala.reflect.ClassTag
-
-import io.fabric8.kubernetes.client.internal.SSLUtils
 import io.fabric8.kubernetes.client.{ConfigBuilder, DefaultKubernetesClient}
 
 import org.apache.spark.deploy.kubernetes.config.resolveK8sMaster
 import org.apache.spark.deploy.kubernetes.integrationtest.docker.SparkDockerImageBuilder
 import org.apache.spark.deploy.kubernetes.integrationtest.minikube.Minikube
-import org.apache.spark.deploy.rest.kubernetes.v1.HttpClientUtil
 
 object TestBackend extends Enumeration {
   val SingleNode, MultiNode = Value
@@ -40,12 +33,19 @@ object KubernetesClient {
 
   def getClient(): DefaultKubernetesClient = {
     if (defaultClient == null) {
-      createClient
+      createDefaultClient
     }
     defaultClient
   }
 
-  private def createClient(): Unit = {
+  def cleanUp(): Unit = {
+    if (testBackend == TestBackend.SingleNode
+      && !System.getProperty("spark.docker.test.persistMinikube", "false").toBoolean) {
+      Minikube.deleteMinikube()
+    }
+  }
+
+  private def createDefaultClient(): Unit = {
     System.getProperty("spark.docker.test.master") match {
       case null =>
         Minikube.startMinikube()

@@ -20,21 +20,20 @@ import java.nio.file.Paths
 
 import com.google.common.base.Charsets
 import com.google.common.io.Files
-import io.fabric8.kubernetes.client.{ConfigBuilder, DefaultKubernetesClient}
 import org.scalatest.Suite
 import org.scalatest.concurrent.PatienceConfiguration
 import org.scalatest.time.{Minutes, Seconds, Span}
 
 import org.apache.spark.SparkFunSuite
-import org.apache.spark.deploy.kubernetes.config.resolveK8sMaster
-import org.apache.spark.deploy.kubernetes.integrationtest.docker.SparkDockerImageBuilder
 import org.apache.spark.deploy.kubernetes.integrationtest.minikube.Minikube
 
 private[spark] class KubernetesSuite extends SparkFunSuite {
+  override def beforeAll(): Unit = {
+    KubernetesClient.getClient()
+  }
+
   override def afterAll(): Unit = {
-    if (!System.getProperty("spark.docker.test.persistMinikube", "false").toBoolean) {
-      Minikube.deleteMinikube()
-    }
+    KubernetesClient.cleanUp()
   }
 
   override def nestedSuites: scala.collection.immutable.IndexedSeq[Suite] = {

@@ -266,7 +266,7 @@ private[spark] class KubernetesV1Suite extends SparkFunSuite with BeforeAndAfter
     assume(KubernetesClient.testBackend == TestBackend.SingleNode)
 
     val externalUriProviderWatch =
-      new ExternalUriProviderWatch(kubernetesTestComponents)
+      new ExternalUriProviderWatch(kubernetesTestComponents.kubernetesClient)
     Utils.tryWithResource(kubernetesTestComponents.kubernetesClient.services()
         .withLabel("spark-app-name", "spark-pi")
         .watch(externalUriProviderWatch)) { _ =>
