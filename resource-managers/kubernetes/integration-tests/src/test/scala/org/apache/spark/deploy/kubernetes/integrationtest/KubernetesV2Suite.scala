@@ -25,7 +25,7 @@ import org.apache.spark.{SparkConf, SparkFunSuite, SSLOptions}
 import org.apache.spark.deploy.kubernetes.SSLUtils
 import org.apache.spark.deploy.kubernetes.config._
 import org.apache.spark.deploy.kubernetes.integrationtest.minikube.Minikube
-import org.apache.spark.deploy.kubernetes.submit.v2.{DownloadRemoteDependencyManagerProviderImpl, SubmissionKubernetesClientProviderImpl, SubmittedDependencyManagerProviderImpl}
+import org.apache.spark.deploy.kubernetes.submit.v2.{DownloadRemoteDependencyManagerProviderImpl, DriverPodKubernetesCredentialsMounterProviderImpl, SubmissionKubernetesClientProviderImpl, SubmittedDependencyManagerProviderImpl}
 import org.apache.spark.launcher.SparkLauncher
 
 @DoNotDiscover
@@ -110,6 +110,19 @@ private[spark] class KubernetesV2Suite extends SparkFunSuite with BeforeAndAfter
     runSparkAppAndVerifyCompletion(SparkLauncher.NO_RESOURCE)
   }
 
+  test("Use client key and client cert file when requesting executors") {
+    sparkConf.setJars(Seq(
+      KubernetesSuite.CONTAINER_LOCAL_MAIN_APP_RESOURCE,
+      KubernetesSuite.CONTAINER_LOCAL_HELPER_JAR_PATH))
+    sparkConf.set(KUBERNETES_DRIVER_CLIENT_KEY_FILE,
+      kubernetesTestComponents.clientConfig.getClientKeyFile)
+    sparkConf.set(KUBERNETES_DRIVER_CLIENT_CERT_FILE,
+      kubernetesTestComponents.clientConfig.getClientCertFile)
+    sparkConf.set(KUBERNETES_DRIVER_CA_CERT_FILE,
+      kubernetesTestComponents.clientConfig.getCaCertFile)
+    runSparkAppAndVerifyCompletion(SparkLauncher.NO_RESOURCE)
+  }
+
   private def launchStagingServer(resourceStagingServerSslOptions: SSLOptions): Unit = {
     val resourceStagingServerPort = resourceStagingServerLauncher.launchStagingServer(
       resourceStagingServerSslOptions)
@@ -133,7 +146,9 @@ private[spark] class KubernetesV2Suite extends SparkFunSuite with BeforeAndAfter
       submittedDependencyManagerProvider =
         new SubmittedDependencyManagerProviderImpl(sparkConf),
       remoteDependencyManagerProvider =
-        new DownloadRemoteDependencyManagerProviderImpl(sparkConf))
+        new DownloadRemoteDependencyManagerProviderImpl(sparkConf),
+      driverPodKubernetesCredentialsMounterProvider =
+        new DriverPodKubernetesCredentialsMounterProviderImpl(sparkConf))
     client.run()
     val driverPod = kubernetesTestComponents.kubernetesClient
       .pods()

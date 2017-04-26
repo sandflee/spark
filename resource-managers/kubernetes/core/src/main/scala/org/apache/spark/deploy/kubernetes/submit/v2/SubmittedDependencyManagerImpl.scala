@@ -34,7 +34,7 @@ import org.apache.spark.deploy.kubernetes.CompressionUtils
 import org.apache.spark.deploy.kubernetes.config._
 import org.apache.spark.deploy.kubernetes.constants._
 import org.apache.spark.deploy.kubernetes.submit.KubernetesFileUtils
-import org.apache.spark.deploy.rest.kubernetes.v1.KubernetesCredentials
+import org.apache.spark.deploy.kubernetes.KubernetesCredentials
 import org.apache.spark.deploy.rest.kubernetes.v2.{ResourceStagingServiceRetrofit, RetrofitClientFactory, StagedResourceIdentifier}
 import org.apache.spark.util.Utils
 

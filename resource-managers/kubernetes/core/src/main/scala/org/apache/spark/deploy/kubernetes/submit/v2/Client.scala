@@ -44,6 +44,11 @@ import org.apache.spark.util.Utils
  * dependencies pre-staged in remote locations like HDFS or their own HTTP servers already, then
  * the mounted dependency manager is bypassed entirely, but the init-container still needs to
  * fetch these remote dependencies (TODO https://github.com/apache-spark-on-k8s/spark/issues/238).
+ * <p>
+ * This client is primarily designed in a piecewise manner, where different aspects of the driver's
+ * execution are managed by separate components. This allows each component to be tested
+ * individually. The component providers are dependency-injected into the client via the
+ * constructor, thus allowing the providers to be stubbed out in testing the client class.
  */
 private[spark] class Client(
     mainClass: String,
@@ -52,10 +57,11 @@ private[spark] class Client(
     mainAppResource: String,
     kubernetesClientProvider: SubmissionKubernetesClientProvider,
     submittedDependencyManagerProvider: SubmittedDependencyManagerProvider,
-    remoteDependencyManagerProvider: DownloadRemoteDependencyManagerProvider) extends Logging {
+    remoteDependencyManagerProvider: DownloadRemoteDependencyManagerProvider,
+    driverPodKubernetesCredentialsMounterProvider: DriverPodKubernetesCredentialsMounterProvider)
+    extends Logging {
 
   private val namespace = sparkConf.get(KUBERNETES_NAMESPACE)
-  private val master = resolveK8sMaster(sparkConf.get("spark.master"))
   private val launchTime = System.currentTimeMillis
   private val appName = sparkConf.getOption("spark.app.name")
     .getOrElse("spark")
@@ -134,7 +140,16 @@ private[spark] class Client(
           .endSpec()
 
       val nonDriverPodKubernetesResources = mutable.Buffer[HasMetadata]()
-
+      val driverPodKubernetesCredentialsMounter = driverPodKubernetesCredentialsMounterProvider
+        .getDriverPodKubernetesCredentialsMounter(kubernetesAppId)
+      val driverPodKubernetesCredentialsSecret = driverPodKubernetesCredentialsMounter
+        .createCredentialsSecret()
+      val driverPodWithMountedDriverKubernetesCredentials = driverPodKubernetesCredentialsMounter
+        .mountDriverKubernetesCredentials(
+          basePod, driverContainer.getName, driverPodKubernetesCredentialsSecret)
+      nonDriverPodKubernetesResources ++= driverPodKubernetesCredentialsSecret.toSeq
+      val sparkConfWithDriverPodKubernetesCredentialLocations =
+        driverPodKubernetesCredentialsMounter.setDriverPodKubernetesCredentialLocations(sparkConf)
       // resolvedJars is all of the original Spark jars, but files on the local disk that
       // were uploaded to the resource staging server are converted to the paths they would
       // have been downloaded at. Similarly for resolvedFiles.
@@ -161,7 +176,10 @@ private[spark] class Client(
         nonDriverPodKubernetesResources += initContainerKubernetesSecret
         nonDriverPodKubernetesResources += initContainerConfigMap
         submittedDependencyManager.configurePodToMountLocalDependencies(
-          driverContainer.getName, initContainerKubernetesSecret, initContainerConfigMap, basePod)
+          driverContainer.getName,
+          initContainerKubernetesSecret,
+          initContainerConfigMap,
+          driverPodWithMountedDriverKubernetesCredentials)
       }.getOrElse {
         sparkJars.map(Utils.resolveURI).foreach { jar =>
           require(Option.apply(jar.getScheme).getOrElse("file") != "file",
@@ -175,9 +193,9 @@ private[spark] class Client(
         }
         resolvedJars ++= sparkJars
         resolvedFiles ++= sparkFiles
-        basePod
+        driverPodWithMountedDriverKubernetesCredentials
       }
-      val resolvedSparkConf = sparkConf.clone()
+      val resolvedSparkConf = sparkConfWithDriverPodKubernetesCredentialLocations.clone()
       if (resolvedJars.nonEmpty) {
         resolvedSparkConf.set("spark.jars", resolvedJars.mkString(","))
       }
@@ -191,14 +209,8 @@ private[spark] class Client(
       resolvedSparkConf.get(KUBERNETES_SUBMIT_OAUTH_TOKEN).foreach { _ =>
         resolvedSparkConf.set(KUBERNETES_SUBMIT_OAUTH_TOKEN.key, "<present_but_redacted>")
       }
-      resolvedSparkConf.get(KUBERNETES_DRIVER_OAUTH_TOKEN).foreach { _ =>
-        resolvedSparkConf.set(KUBERNETES_DRIVER_OAUTH_TOKEN.key, "<present_but_redacted>")
-      }
       val remoteDependencyManager = remoteDependencyManagerProvider
-        .getDownloadRemoteDependencyManager(
-          kubernetesAppId,
-          resolvedJars,
-          resolvedFiles)
+        .getDownloadRemoteDependencyManager(kubernetesAppId, resolvedJars, resolvedFiles)
       val downloadRemoteDependenciesConfigMap = remoteDependencyManager
         .buildInitContainerConfigMap()
       nonDriverPodKubernetesResources += downloadRemoteDependenciesConfigMap

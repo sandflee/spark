@@ -83,6 +83,8 @@ class ClientV2Suite extends SparkFunSuite with BeforeAndAfter {
   private var mountedDependencyManager: SubmittedDependencyManager = _
   private var captureCreatedPodAnswer: SelfArgumentCapturingAnswer[Pod] = _
   private var captureCreatedResourcesAnswer: AllArgumentsCapturingAnswer[HasMetadata, RESOURCES] = _
+  private var credentialsMounterProvider: DriverPodKubernetesCredentialsMounterProvider = _
+  private var credentialsMounter: DriverPodKubernetesCredentialsMounter = _
   private var capturedJars: Option[Seq[String]] = None
   private var capturedFiles: Option[Seq[String]] = None
 
@@ -104,6 +106,8 @@ class ClientV2Suite extends SparkFunSuite with BeforeAndAfter {
     mountedDependencyManager = mock[SubmittedDependencyManager]
     remoteDependencyManagerProvider = mock[DownloadRemoteDependencyManagerProvider]
     remoteDependencyManager = mock[DownloadRemoteDependencyManager]
+    credentialsMounterProvider = mock[DriverPodKubernetesCredentialsMounterProvider]
+    credentialsMounter = mock[DriverPodKubernetesCredentialsMounter]
     when(remoteDependencyManagerProvider.getDownloadRemoteDependencyManager(any(), any(), any()))
       .thenAnswer(new Answer[DownloadRemoteDependencyManager] {
         override def answer(invocationOnMock: InvocationOnMock): DownloadRemoteDependencyManager = {
@@ -132,6 +136,13 @@ class ClientV2Suite extends SparkFunSuite with BeforeAndAfter {
     when(podOperations.create(any())).thenAnswer(captureCreatedPodAnswer)
     when(submissionKubernetesClient.resourceList(anyVararg[HasMetadata]))
       .thenAnswer(captureCreatedResourcesAnswer)
+    when(credentialsMounterProvider.getDriverPodKubernetesCredentialsMounter(any()))
+      .thenReturn(credentialsMounter)
+    when(credentialsMounter.mountDriverKubernetesCredentials(any(), any(), any()))
+      .thenAnswer(AdditionalAnswers.returnsFirstArg())
+    when(credentialsMounter.setDriverPodKubernetesCredentialLocations(any()))
+      .thenAnswer(AdditionalAnswers.returnsFirstArg())
+    when(credentialsMounter.createCredentialsSecret()).thenReturn(None)
   }
 
   // Tests w/o local dependencies, or behave independently to that configuration.
@@ -205,8 +216,8 @@ class ClientV2Suite extends SparkFunSuite with BeforeAndAfter {
 
   // Tests with local dependencies with the mounted dependency manager.
   test("Uploading local dependencies should create Kubernetes secrets and config map") {
-    val initContainerConfigMap = getInitContainerConfigMap()
-    val initContainerSecret = getInitContainerSecret()
+    val initContainerConfigMap = getInitContainerConfigMap
+    val initContainerSecret = getInitContainerSecret
     runWithMountedDependencies(initContainerConfigMap, initContainerSecret)
     val driverPod = captureCreatedPodAnswer.capturedArgument
     assert(captureCreatedResourcesAnswer.capturedArguments != null)
@@ -226,8 +237,8 @@ class ClientV2Suite extends SparkFunSuite with BeforeAndAfter {
   }
 
   test("Uploading local resources should set classpath environment variables") {
-    val initContainerConfigMap = getInitContainerConfigMap()
-    val initContainerSecret = getInitContainerSecret()
+    val initContainerConfigMap = getInitContainerConfigMap
+    val initContainerSecret = getInitContainerSecret
     runWithMountedDependencies(initContainerConfigMap, initContainerSecret)
     val driverPod = captureCreatedPodAnswer.capturedArgument
     val maybeDriverContainer = getDriverContainer(driverPod)
@@ -283,7 +294,7 @@ class ClientV2Suite extends SparkFunSuite with BeforeAndAfter {
     }
   }
 
-  private def getInitContainerSecret(): Secret = {
+  private def getInitContainerSecret: Secret = {
     new SecretBuilder()
       .withNewMetadata().withName(s"$APP_NAME-init-container-secret").endMetadata()
       .addToData(
@@ -294,7 +305,7 @@ class ClientV2Suite extends SparkFunSuite with BeforeAndAfter {
       .build()
   }
 
-  private def getInitContainerConfigMap(): ConfigMap = {
+  private def getInitContainerConfigMap: ConfigMap = {
     new ConfigMapBuilder()
       .withNewMetadata().withName(s"$APP_NAME-init-container-conf").endMetadata()
       .addToData("key", "configuration")
@@ -377,7 +388,8 @@ class ClientV2Suite extends SparkFunSuite with BeforeAndAfter {
       MAIN_APP_RESOURCE,
       submissionKubernetesClientProvider,
       submittedDependencyManagerProvider,
-      remoteDependencyManagerProvider)
+      remoteDependencyManagerProvider,
+      credentialsMounterProvider)
   }
 
   private class SelfArgumentCapturingAnswer[T: ClassTag] extends Answer[T] {
