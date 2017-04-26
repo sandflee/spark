@@ -24,11 +24,11 @@ import scala.collection.mutable.ArrayBuffer
 import org.apache.spark.internal.Logging
 import org.apache.spark.util.Utils
 
-/**
- * ProcessUtils is used to run a command and return the output if it
- * completes within timeout seconds.
- */
 object ProcessUtils extends Logging {
+  /**
+    * executeProcess is used to run a command and return the output if it
+    * completes within timeout seconds.
+    */
   def executeProcess(fullCommand: Array[String], timeout: Long): Seq[String] = {
     val pb = new ProcessBuilder().command(fullCommand: _*)
     pb.redirectErrorStream(true)
