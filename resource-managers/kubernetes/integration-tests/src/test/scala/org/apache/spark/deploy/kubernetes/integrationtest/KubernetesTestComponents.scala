@@ -30,7 +30,7 @@ import org.scalatest.concurrent.Eventually
 import org.apache.spark.SparkConf
 import org.apache.spark.deploy.kubernetes.config._
 import org.apache.spark.deploy.kubernetes.integrationtest.docker.SparkDockerImageBuilder
-import org.apache.spark.deploy.kubernetes.integrationtest.minikube.Minikube
+import org.apache.spark.deploy.kubernetes.integrationtest.backend.minikube.Minikube
 import org.apache.spark.deploy.rest.kubernetes.v1.HttpClientUtil
 
 private[spark] class KubernetesTestComponents(defaultClient: DefaultKubernetesClient) {
@@ -107,47 +107,6 @@ private[spark] class KubernetesTestComponents(defaultClient: DefaultKubernetesCl
       field.get(client).asInstanceOf[OkHttpClient]
     } finally {
       field.setAccessible(false)
-    }
-  }
-}
-
-object KubernetesTestBackend extends Enumeration {
-  val SingleNode, MultiNode = Value
-}
-
-/**
- * Creates and holds a Kubernetes client for executing tests.
- * When master and driver/executor images are supplied, we return a client
- * for that cluster. By default, we return a Minikube client
- */
-
-class KubernetesTestClient {
-  var defaultClient: DefaultKubernetesClient = _
-  var testBackend: KubernetesTestBackend.Value = _
-
-  Option(System.getProperty("spark.kubernetes.test.master")).map {
-    master =>
-      var k8ConfBuilder = new ConfigBuilder()
-        .withApiVersion("v1")
-        .withMasterUrl(resolveK8sMaster(master))
-      val k8ClientConfig = k8ConfBuilder.build
-      defaultClient = new DefaultKubernetesClient(k8ClientConfig)
-      testBackend = KubernetesTestBackend.MultiNode
-  }.getOrElse {
-    Minikube.startMinikube()
-    new SparkDockerImageBuilder(Minikube.getDockerEnv).buildSparkDockerImages()
-    defaultClient = Minikube.getKubernetesClient
-    testBackend = KubernetesTestBackend.SingleNode
-  }
-
-  def getClient(): DefaultKubernetesClient = {
-    defaultClient
-  }
-
-  def cleanUp(): Unit = {
-    if (testBackend == KubernetesTestBackend.SingleNode
-      && !System.getProperty("spark.docker.test.persistMinikube", "false").toBoolean) {
-      Minikube.deleteMinikube()
     }
   }
 }

@@ -25,22 +25,23 @@ import org.scalatest.concurrent.PatienceConfiguration
 import org.scalatest.time.{Minutes, Seconds, Span}
 
 import org.apache.spark.SparkFunSuite
+import org.apache.spark.deploy.kubernetes.integrationtest.backend.{IntegrationTestBackend, IntegrationTestBackendFactory}
 
 private[spark] class KubernetesSuite extends SparkFunSuite {
-  private var kubernetesTestClient: KubernetesTestClient = _
+  private val testBackend: IntegrationTestBackend = IntegrationTestBackendFactory.getTestBackend()
 
   override def beforeAll(): Unit = {
-    kubernetesTestClient = new KubernetesTestClient()
+    testBackend.initialize()
   }
 
   override def afterAll(): Unit = {
-    kubernetesTestClient.cleanUp()
+    testBackend.cleanUp()
   }
 
   override def nestedSuites: scala.collection.immutable.IndexedSeq[Suite] = {
       Vector(
-        new KubernetesV1Suite(kubernetesTestClient),
-        new KubernetesV2Suite(kubernetesTestClient))
+        new KubernetesV1Suite(testBackend),
+        new KubernetesV2Suite(testBackend))
   }
 }
 

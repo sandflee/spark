@@ -21,14 +21,16 @@ import java.util.UUID
 import org.scalatest.{BeforeAndAfter, DoNotDiscover}
 import org.scalatest.concurrent.Eventually
 
-import org.apache.spark.{SSLOptions, SparkConf, SparkFunSuite}
+import org.apache.spark._
 import org.apache.spark.deploy.kubernetes.SSLUtils
 import org.apache.spark.deploy.kubernetes.config._
-import org.apache.spark.deploy.kubernetes.integrationtest.minikube.Minikube
+import org.apache.spark.deploy.kubernetes.integrationtest.backend.IntegrationTestBackend
+import org.apache.spark.deploy.kubernetes.integrationtest.backend.minikube.Minikube
+import org.apache.spark.deploy.kubernetes.integrationtest.constants.MINIKUBE_TEST_BACKEND
 import org.apache.spark.deploy.kubernetes.submit.v2.{MountedDependencyManagerProviderImpl, SubmissionKubernetesClientProviderImpl}
 
 @DoNotDiscover
-private[spark] class KubernetesV2Suite(kubernetesTestClient: KubernetesTestClient)
+private[spark] class KubernetesV2Suite(testBackend: IntegrationTestBackend)
   extends SparkFunSuite with BeforeAndAfter {
 
   private val APP_LOCATOR_LABEL = UUID.randomUUID().toString.replaceAll("-", "")
@@ -37,7 +39,7 @@ private[spark] class KubernetesV2Suite(kubernetesTestClient: KubernetesTestClien
   private var resourceStagingServerLauncher: ResourceStagingServerLauncher = _
 
   override def beforeAll(): Unit = {
-    kubernetesTestComponents = new KubernetesTestComponents(kubernetesTestClient.getClient())
+    kubernetesTestComponents = new KubernetesTestComponents(testBackend.getKubernetesClient)
     resourceStagingServerLauncher = new ResourceStagingServerLauncher(
       kubernetesTestComponents.kubernetesClient.inNamespace(kubernetesTestComponents.namespace))
   }
@@ -55,14 +57,14 @@ private[spark] class KubernetesV2Suite(kubernetesTestClient: KubernetesTestClien
   }
 
   test("Use submission v2.") {
-    assume(kubernetesTestClient.testBackend == KubernetesTestBackend.SingleNode)
+    assume(testBackend.name == MINIKUBE_TEST_BACKEND)
 
     launchStagingServer(SSLOptions())
     runSparkAppAndVerifyCompletion(KubernetesSuite.SUBMITTER_LOCAL_MAIN_APP_RESOURCE)
   }
 
   test("Enable SSL on the submission server") {
-    assume(kubernetesTestClient.testBackend == KubernetesTestBackend.SingleNode)
+    assume(testBackend.name == MINIKUBE_TEST_BACKEND)
 
     val (keyStore, trustStore) = SSLUtils.generateKeyStoreTrustStorePair(
       ipAddress = Minikube.getMinikubeIp,
@@ -86,7 +88,7 @@ private[spark] class KubernetesV2Suite(kubernetesTestClient: KubernetesTestClien
   }
 
   test("Use container-local resources without the resource staging server") {
-    assume(kubernetesTestClient.testBackend == KubernetesTestBackend.SingleNode)
+    assume(testBackend.name == MINIKUBE_TEST_BACKEND)
 
     sparkConf.setJars(Seq(
       KubernetesSuite.CONTAINER_LOCAL_MAIN_APP_RESOURCE,
@@ -95,7 +97,7 @@ private[spark] class KubernetesV2Suite(kubernetesTestClient: KubernetesTestClien
   }
 
   private def launchStagingServer(resourceStagingServerSslOptions: SSLOptions): Unit = {
-    assume(kubernetesTestClient.testBackend == KubernetesTestBackend.SingleNode)
+    assume(testBackend.name == MINIKUBE_TEST_BACKEND)
 
     val resourceStagingServerPort = resourceStagingServerLauncher.launchStagingServer(
       resourceStagingServerSslOptions)
