@@ -83,7 +83,6 @@ private[spark] class KubernetesTestComponents(defaultClient: DefaultKubernetesCl
     servicePortName: String,
     servicePath: String = ""): T = synchronized {
     val kubernetesMaster = s"${defaultClient.getMasterUrl}"
-    val httpClient = getHttpClient(kubernetesClient.asInstanceOf[BaseClient])
 
     val url = s"${
       Array[String](
