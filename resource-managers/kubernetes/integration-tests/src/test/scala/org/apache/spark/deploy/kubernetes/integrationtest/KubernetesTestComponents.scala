@@ -22,15 +22,12 @@ import javax.net.ssl.X509TrustManager
 import scala.collection.JavaConverters._
 import scala.reflect.ClassTag
 
-import io.fabric8.kubernetes.client.{BaseClient, ConfigBuilder, DefaultKubernetesClient}
+import io.fabric8.kubernetes.client.DefaultKubernetesClient
 import io.fabric8.kubernetes.client.internal.SSLUtils
-import okhttp3.OkHttpClient
 import org.scalatest.concurrent.Eventually
 
 import org.apache.spark.SparkConf
 import org.apache.spark.deploy.kubernetes.config._
-import org.apache.spark.deploy.kubernetes.integrationtest.docker.SparkDockerImageBuilder
-import org.apache.spark.deploy.kubernetes.integrationtest.backend.minikube.Minikube
 import org.apache.spark.deploy.rest.kubernetes.v1.HttpClientUtil
 
 private[spark] class KubernetesTestComponents(defaultClient: DefaultKubernetesClient) {
@@ -97,15 +94,5 @@ private[spark] class KubernetesTestComponents(defaultClient: DefaultKubernetesCl
     val sslContext = SSLUtils.sslContext(kubernetesConf)
     val trustManager = SSLUtils.trustManagers(kubernetesConf)(0).asInstanceOf[X509TrustManager]
     HttpClientUtil.createClient[T](Set(url), 5, sslContext.getSocketFactory, trustManager)
-  }
-
-  def getHttpClient(client: BaseClient): OkHttpClient = {
-    val field = classOf[BaseClient].getDeclaredField("httpClient")
-    try {
-      field.setAccessible(true)
-      field.get(client).asInstanceOf[OkHttpClient]
-    } finally {
-      field.setAccessible(false)
-    }
   }
 }
