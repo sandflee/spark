@@ -16,6 +16,8 @@
  */
 package org.apache.spark.deploy.kubernetes.submit
 
+import java.io.File
+
 import org.apache.spark.{SparkConf, SSLOptions}
 import org.apache.spark.deploy.kubernetes.{InitContainerResourceStagingServerSecretPluginImpl, OptionRequirements, SparkPodInitContainerBootstrap, SparkPodInitContainerBootstrapImpl}
 import org.apache.spark.deploy.kubernetes.config._
@@ -104,6 +106,10 @@ private[spark] class DriverInitContainerComponentsProviderImpl(
   private val initContainerImage = sparkConf.get(INIT_CONTAINER_DOCKER_IMAGE)
   private val downloadTimeoutMinutes = sparkConf.get(INIT_CONTAINER_MOUNT_TIMEOUT)
 
+  private val kubernetesApiClientKeyFile = sparkConf.get(KUBERNETES_SUBMIT_CLIENT_KEY_FILE)
+  private val kubernetesApiClientCertFile = sparkConf.get(KUBERNETES_SUBMIT_CLIENT_CERT_FILE)
+  private val kubernetesApiOauthToken = sparkConf.get(KUBERNETES_SUBMIT_OAUTH_TOKEN)
+
   override def provideInitContainerConfigMapBuilder(
       maybeSubmittedResourceIds: Option[SubmittedResourceIds])
       : SparkInitContainerConfigMapBuilder = {
@@ -161,6 +167,9 @@ private[spark] class DriverInitContainerComponentsProviderImpl(
         stagingServerUri,
         sparkJars,
         sparkFiles,
+        kubernetesApiClientKeyFile.map(new File(_)),
+        kubernetesApiClientCertFile.map(new File(_)),
+        kubernetesApiOauthToken,
         resourceStagingServerExternalSslOptions,
         RetrofitClientFactoryImpl)
     }

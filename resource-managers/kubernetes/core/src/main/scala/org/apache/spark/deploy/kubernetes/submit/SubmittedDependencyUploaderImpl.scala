@@ -21,12 +21,14 @@ import javax.ws.rs.core.MediaType
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.scala.DefaultScalaModule
+import com.google.common.base.Charsets
+import com.google.common.io.{BaseEncoding, Files}
 import okhttp3.RequestBody
 import retrofit2.Call
 
-import org.apache.spark.{SparkException, SSLOptions}
-import org.apache.spark.deploy.kubernetes.{CompressionUtils, KubernetesCredentials}
-import org.apache.spark.deploy.rest.kubernetes.{ResourceStagingServiceRetrofit, RetrofitClientFactory}
+import org.apache.spark.{SSLOptions, SparkException}
+import org.apache.spark.deploy.kubernetes.CompressionUtils
+import org.apache.spark.deploy.rest.kubernetes.{PodMonitoringCredentials, ResourceStagingServiceRetrofit, RetrofitClientFactory}
 import org.apache.spark.util.Utils
 
 private[spark] trait SubmittedDependencyUploader {
@@ -54,9 +56,13 @@ private[spark] class SubmittedDependencyUploaderImpl(
     stagingServerUri: String,
     sparkJars: Seq[String],
     sparkFiles: Seq[String],
+    clientKeyFile: Option[File],
+    clientCertFile: Option[File],
+    oauthToken: Option[String],
     stagingServiceSslOptions: SSLOptions,
     retrofitClientFactory: RetrofitClientFactory) extends SubmittedDependencyUploader {
   private val OBJECT_MAPPER = new ObjectMapper().registerModule(new DefaultScalaModule)
+  private val BASE_64 = BaseEncoding.base64()
 
   private def localUriStringsToFiles(uris: Seq[String]): Iterable[File] = {
     KubernetesFileUtils.getOnlySubmitterLocalFiles(uris)
@@ -76,9 +82,15 @@ private[spark] class SubmittedDependencyUploaderImpl(
     Utils.tryWithResource(new FileOutputStream(filesTgz)) { filesOutputStream =>
       CompressionUtils.writeTarGzipToStream(filesOutputStream, files.map(_.getAbsolutePath))
     }
-    // TODO provide credentials properly when the staging server monitors the Kubernetes API.
+    val clientKeyBase64 = clientKeyFile.map(f => BASE_64.encode(Files.toByteArray(f)))
+    val clientCertBase64 = clientCertFile.map(f => BASE_64.encode(Files.toByteArray(f)))
+    val oauthTokenBase64 = oauthToken.map(token => BASE_64.encode(token.getBytes(Charsets.UTF_8)))
+
     val kubernetesCredentialsString = OBJECT_MAPPER.writer()
-      .writeValueAsString(KubernetesCredentials(None, None, None, None))
+      .writeValueAsString(PodMonitoringCredentials(
+        clientKeyDataBase64 = clientKeyBase64,
+        clientCertDataBase64 = clientCertBase64,
+        oauthTokenBase64 = oauthTokenBase64))
     val labelsAsString = OBJECT_MAPPER.writer().writeValueAsString(podLabels)
 
     val filesRequestBody = RequestBody.create(

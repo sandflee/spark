@@ -61,6 +61,9 @@ private[spark] class SubmittedDependencyUploaderSuite extends SparkFunSuite with
     trustStore = Some(TRUSTSTORE_FILE),
     trustStorePassword = Some(TRUSTSTORE_PASSWORD),
     trustStoreType = Some(TRUSTSTORE_TYPE))
+  private val CLIENT_KEY_FILE = createTempFile("pem")
+  private val CLIENT_CERT_FILE = createTempFile("pem")
+  private val OAUTH_TOKEN = "token"
   private var retrofitClientFactory: RetrofitClientFactory = _
   private var retrofitClient: ResourceStagingServiceRetrofit = _
 
@@ -80,6 +83,9 @@ private[spark] class SubmittedDependencyUploaderSuite extends SparkFunSuite with
       STAGING_SERVER_URI,
       JARS,
       FILES,
+      Some(new File(CLIENT_KEY_FILE)),
+      Some(new File(CLIENT_CERT_FILE)),
+      Some(OAUTH_TOKEN),
       STAGING_SERVER_SSL_OPTIONS,
       retrofitClientFactory)
   }
