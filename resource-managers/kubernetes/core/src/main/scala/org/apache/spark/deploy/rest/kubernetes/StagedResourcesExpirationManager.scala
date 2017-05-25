@@ -16,16 +16,14 @@
  */
 package org.apache.spark.deploy.rest.kubernetes
 
-import java.util.{Timer, TimerTask}
+import java.util.concurrent.{ScheduledExecutorService, TimeUnit}
 
-import io.fabric8.kubernetes.api.model.Pod
-import io.fabric8.kubernetes.client.{KubernetesClient, KubernetesClientException, Watch, Watcher}
-import io.fabric8.kubernetes.client.Watcher.Action
-import org.apache.commons.io.IOUtils
 import scala.collection.JavaConverters._
 import scala.collection.concurrent.TrieMap
+import scala.collection.mutable
 
 import org.apache.spark.internal.Logging
+import org.apache.spark.util.{Clock, Utils}
 
 private[spark] trait StagedResourcesExpirationManager {
 
@@ -41,7 +39,8 @@ private[spark] trait StagedResourcesExpirationManager {
 private class StagedResourcesExpirationManagerImpl(
       stagedResourcesStore: StagedResourcesStore,
       kubernetesClientProvider: ResourceStagingServiceKubernetesClientProvider,
-      expirationTimer: Timer,
+      expirationExecutorService: ScheduledExecutorService,
+      clock: Clock,
       expiredResourceTtlMs: Long,
       resourceCleanupIntervalMs: Long)
     extends StagedResourcesExpirationManager {
@@ -49,8 +48,11 @@ private class StagedResourcesExpirationManagerImpl(
   private val activeResources = TrieMap.empty[String, MonitoredResource]
 
   override def startMonitoringForExpiredResources(): Unit = {
-    expirationTimer.scheduleAtFixedRate(
-        new CleanupTask(), resourceCleanupIntervalMs, resourceCleanupIntervalMs)
+    expirationExecutorService.scheduleAtFixedRate(
+        new CleanupRunnable(),
+        resourceCleanupIntervalMs,
+        resourceCleanupIntervalMs,
+        TimeUnit.MILLISECONDS)
   }
 
   override def monitorResourceForExpiration(
@@ -62,123 +64,58 @@ private class StagedResourcesExpirationManagerImpl(
         resourceId, podNamespace, podLabels, kubernetesCredentials)
   }
 
-  private class CleanupTask extends TimerTask with Logging {
+  private class CleanupRunnable extends Runnable with Logging {
+
+    private val expiringResources = mutable.Map.empty[String, ExpiringResource]
+
     override def run(): Unit = {
       // Make a copy so we can iterate through this while modifying activeResources
       val activeResourcesCopy = Map.apply(activeResources.toSeq: _*)
       for ((resourceId, resource) <- activeResourcesCopy) {
-        val kubernetesClient = kubernetesClientProvider.getKubernetesClient(
-            resource.podNamespace, resource.kubernetesCredentials)
-        var shouldCloseKubernetesClient = true
-        try {
+        Utils.tryWithResource(
+            kubernetesClientProvider.getKubernetesClient(
+                resource.podNamespace, resource.kubernetesCredentials)) { kubernetesClient =>
           val podsWithLabels = kubernetesClient
-              .pods()
-              .withLabels(resource.podLabels.asJava)
-              .list()
-          if (podsWithLabels.getItems.isEmpty) {
-            shouldCloseKubernetesClient = false
-            activeResources.remove(resourceId)
-            try {
-              val expiringResource = new ExpiringResource(kubernetesClient, resource)
-              expiringResource.countDownExpiration()
-            } catch {
-              case e: Throwable =>
-                // Add back the resource if we failed to start the expiration process
-                activeResources(resourceId) = resource
-                throw e
-            }
-          }
-        } catch {
-          case e: Throwable =>
-            shouldCloseKubernetesClient = true
-            logWarning(s"Encountered an error while examining resource with" +
-              s" id $resourceId for cleanup.", e)
-        } finally {
-          if (shouldCloseKubernetesClient) {
-            IOUtils.closeQuietly(kubernetesClient)
-          }
-        }
-      }
-    }
-  }
-
-  private[spark] class ExpiringResource(
-      kubernetesClient: KubernetesClient, monitoredResource: MonitoredResource) extends Logging {
-
-    private var cancelExpirationWatch: Option[Watch] = _
-    private val expirationTask = new ExpirationTask()
-    private val cancelExpirationWatcher = new CancelExpirationWatcher()
-
-    def countDownExpiration(): Unit = {
-      try {
-        cancelExpirationWatch = Some(kubernetesClient
-          .pods()
-          .withLabels(monitoredResource.podLabels.asJava)
-          .watch(cancelExpirationWatcher))
-        expirationTimer.schedule(expirationTask, expiredResourceTtlMs)
-      } catch {
-        case e: Throwable =>
-          closeKubernetesConnections()
-          throw e
-      }
-    }
-
-    private def closeKubernetesConnections(): Unit = {
-      cancelExpirationWatch.foreach(IOUtils.closeQuietly)
-      IOUtils.closeQuietly(kubernetesClient)
-    }
-
-    private class ExpirationTask extends TimerTask {
-      override def run(): Unit = {
-        try {
-          if (kubernetesClient
             .pods()
-            .withLabels(monitoredResource.podLabels.asJava)
+            .withLabels(resource.podLabels.asJava)
             .list()
-            .getItems
-            .isEmpty) {
-            stagedResourcesStore.removeResources(monitoredResource.resourceId)
+          if (podsWithLabels.getItems.isEmpty) {
+            activeResources.remove(resourceId)
+            val expiresAt = clock.getTimeMillis() + expiredResourceTtlMs
+            expiringResources(resourceId) = ExpiringResource(expiresAt, resource)
           }
-        } finally {
-          closeKubernetesConnections()
         }
       }
 
-      override def cancel(): Boolean = {
-        try {
-          val successfulCancellation = super.cancel()
-          if (successfulCancellation) {
-            monitorResourceForExpiration(
-              monitoredResource.resourceId,
-              monitoredResource.podNamespace,
-              monitoredResource.podLabels,
-              monitoredResource.kubernetesCredentials)
-          } else {
-            logWarning(s"Failed to cancel expiration task for resource with" +
-              s" id: ${monitoredResource.resourceId}.")
+      val expiringResourcesCopy = Map.apply(expiringResources.toSeq: _*)
+      for ((resourceId, expiringResource) <- expiringResourcesCopy) {
+        Utils.tryWithResource(
+            kubernetesClientProvider.getKubernetesClient(
+                expiringResource.resource.podNamespace,
+                expiringResource.resource.kubernetesCredentials)) { kubernetesClient =>
+          val podsWithLabels = kubernetesClient
+            .pods()
+            .withLabels(expiringResource.resource.podLabels.asJava)
+            .list()
+          if (!podsWithLabels.getItems.isEmpty) {
+            activeResources(resourceId) = expiringResource.resource
+            expiringResources.remove(resourceId)
+          } else if (clock.getTimeMillis() > expiringResource.expiresAt) {
+            stagedResourcesStore.removeResources(resourceId)
+            expiringResources.remove(resourceId)
           }
-          successfulCancellation
-        } finally {
-          closeKubernetesConnections()
         }
-      }
-    }
-
-    private class CancelExpirationWatcher extends Watcher[Pod] {
-      override def eventReceived(action: Action, resource: Pod): Unit = {
-        action match {
-          case Action.ADDED | Action.MODIFIED =>
-            expirationTask.cancel()
-          case other =>
-            logDebug(s"Ignoring action on pod with type $other")
-        }
-      }
-
-      override def onClose(cause: KubernetesClientException): Unit = {
-        logDebug("Resource expiration watcher closed.", cause)
       }
     }
   }
+
+  private case class MonitoredResource(
+      resourceId: String,
+      podNamespace: String,
+      podLabels: Map[String, String],
+      kubernetesCredentials: PodMonitoringCredentials)
+
+  private case class ExpiringResource(expiresAt: Long, resource: MonitoredResource)
 }
 
 

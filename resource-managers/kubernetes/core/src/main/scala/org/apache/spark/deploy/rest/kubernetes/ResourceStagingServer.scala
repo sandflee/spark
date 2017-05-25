@@ -33,7 +33,7 @@ import org.glassfish.jersey.servlet.ServletContainer
 import org.apache.spark.SparkConf
 import org.apache.spark.deploy.kubernetes.config._
 import org.apache.spark.internal.Logging
-import org.apache.spark.util.Utils
+import org.apache.spark.util.{SystemClock, ThreadUtils, Utils}
 
 private[spark] class ResourceStagingServer(
     port: Int,
@@ -108,11 +108,12 @@ object ResourceStagingServer {
     val kubernetesClientProvider = new ResourceStagingServiceKubernetesClientProviderImpl(
         apiServerUri, caCertFile)
     val stagedResourcesStore = new StagedResourcesStoreImpl(dependenciesRootDir)
-    val expirationTimer = new Timer(true)
     val stagedResourcesExpirationManager = new StagedResourcesExpirationManagerImpl(
       kubernetesClientProvider = kubernetesClientProvider,
       stagedResourcesStore = stagedResourcesStore,
-      expirationTimer = expirationTimer,
+      expirationExecutorService = ThreadUtils
+          .newDaemonSingleThreadScheduledExecutor("resource-expiration"),
+      clock = new SystemClock(),
       expiredResourceTtlMs = expiredResourceTtlMs,
       resourceCleanupIntervalMs = resourceCleanupIntervalMs)
     stagedResourcesExpirationManager.startMonitoringForExpiredResources()

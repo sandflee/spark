@@ -296,7 +296,7 @@ package object config extends Logging {
         " cleaned up. Note that this is the time period after the resource staging server first" +
         " detects that no pods are present that are using their mounted resources.")
       .timeConf(TimeUnit.MILLISECONDS)
-      .createWithDefaultString("5m")
+      .createWithDefaultString("30m")
 
   private[spark] val RESOURCE_STAGING_SERVER_CLEANUP_INTERVAL =
     ConfigBuilder("spark.kubernetes.resourceStagingServer.resourceCleanupInterval")
