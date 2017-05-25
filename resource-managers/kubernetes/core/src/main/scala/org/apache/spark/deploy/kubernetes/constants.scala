@@ -96,4 +96,18 @@ package object constants {
   private[spark] val TPR_API_GROUP = "apache.org"
   private[spark] val TPR_API_VERSION = "v1"
   private[spark] val TPR_KIND = "SparkJob"
+
+  // SparkJob Status
+  private[spark] val STATUS_CREATION_TIMESTAMP = "creationTimeStamp"
+  private[spark] val STATUS_COMPLETION_TIMESTAMP = "completionTimeStamp"
+  private[spark] val STATUS_DRIVER = "sparkDriver"
+  private[spark] val STATUS_DRIVER_IMAGE = "driverImage"
+  private[spark] val STATUS_EXECUTOR_IMAGE = "executorImage"
+  private[spark] val STATUS_JOB_STATE = "jobState"
+  private[spark] val STATUS_DESIRED_EXECUTORS = "desiredExecutors"
+  private[spark] val STATUS_CURRENT_EXECUTORS = "currentExecutors"
+  private[spark] val STATUS_DRIVER_UI = "driverUi"
+  private[spark] val STATUS_NOT_AVAILABLE = "N/A"
+  private[spark] val STATUS_PENDING = "Pending"
+
 }

@@ -17,27 +17,30 @@
 package org.apache.spark.scheduler.cluster.kubernetes
 
 import java.io.Closeable
+import java.util.Calendar
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.{AtomicInteger, AtomicLong, AtomicReference}
 
-import io.fabric8.kubernetes.api.model.{ContainerPortBuilder, EnvVarBuilder, EnvVarSourceBuilder, Pod, PodBuilder, QuantityBuilder}
+import scala.collection.mutable
+import scala.collection.JavaConverters._
+import scala.concurrent.{ExecutionContext, Future}
+import scala.util.{Failure, Success, Try}
+
+import io.fabric8.kubernetes.api.model._
 import io.fabric8.kubernetes.client.{KubernetesClientException, Watcher}
 import io.fabric8.kubernetes.client.Watcher.Action
 import org.apache.commons.io.FilenameUtils
-import scala.collection.JavaConverters._
-import scala.collection.mutable
-import scala.concurrent.{ExecutionContext, Future}
-import scala.util.{Failure, Success, Try}
 
 import org.apache.spark.{SparkContext, SparkEnv, SparkException}
 import org.apache.spark.deploy.kubernetes.{ConfigurationUtils, SparkPodInitContainerBootstrap}
 import org.apache.spark.deploy.kubernetes.config._
 import org.apache.spark.deploy.kubernetes.constants._
-import org.apache.spark.deploy.kubernetes.tpr.{JobState, TPRCrudCalls, WatchObject}
+import org.apache.spark.deploy.kubernetes.tpr.{JobState, TPRCrudCalls}
 import org.apache.spark.rpc.{RpcCallContext, RpcEndpointAddress, RpcEnv}
 import org.apache.spark.scheduler.TaskSchedulerImpl
 import org.apache.spark.scheduler.cluster.CoarseGrainedClusterMessages.{RetrieveSparkAppConfig, SparkAppConfig}
 import org.apache.spark.scheduler.cluster.CoarseGrainedSchedulerBackend
+import org.apache.spark.ui.SparkUI
 import org.apache.spark.util.{ThreadUtils, Utils}
 
 private[spark] class KubernetesClusterSchedulerBackend(
@@ -165,18 +168,17 @@ private[spark] class KubernetesClusterSchedulerBackend(
           }
         }
       }
+      updateStatus(STATUS_CURRENT_EXECUTORS, totalRegisteredExecutors.get())
     }
   }
 
-  private var workingWithSparkJobResource =
-    conf.get("spark.kubernetes.jobResourceSet", "false").toBoolean
-
   private val jobResourceName = conf.get("spark.kubernetes.jobResourceName", "")
-
-  private val resourceWatcherPool = ExecutionContext.fromExecutorService(
-    ThreadUtils.newDaemonFixedThreadPool(2, "resource-watcher-pool"))
-
-  private val sparkJobResourceCtrller = new TPRCrudCalls(kubernetesClient)
+  private val sparkJobResourceController =
+    if (conf.get("spark.kubernetes.jobResourceSet", "false").toBoolean) {
+      Some(new TPRCrudCalls(kubernetesClient))
+    } else {
+      None
+    }
 
   private def getInitialTargetExecutorNumber(defaultNumExecutors: Int = 1): Int = {
     if (Utils.isDynamicAllocationEnabled(conf)) {
@@ -194,53 +196,18 @@ private[spark] class KubernetesClusterSchedulerBackend(
 
   }
 
-  private def updateAndStartWatchOnResource(): Unit = {
-    if (workingWithSparkJobResource) {
-      logInfo(s"Updating Job Resource with name. $jobResourceName")
-      Try(sparkJobResourceCtrller
-        .updateJobObject(jobResourceName, JobState.SUBMITTED.toString, "/spec/state")) match {
-        case Success(_) => startWatcher()(resourceWatcherPool)
-        case Failure(e: SparkException) if e.getMessage startsWith "404" =>
-          logWarning(s"Possible deletion of jobResource before backend start")
-          workingWithSparkJobResource = false
-        case Failure(e: SparkException) =>
-          logWarning(s"SparkJob object not updated. ${e.getMessage}")
-        // SparkJob should continue if this fails as discussed
-        // Maybe some retry + backoff mechanism ?
-      }
-    }
-  }
-
-  private def startWatcher()(implicit ec: ExecutionContext): Unit = {
-    ec.execute(new Runnable {
-      override def run(): Unit = {
-          sparkJobResourceCtrller.watchJobObject() onComplete {
-          case Success(w: WatchObject) if w.`type` == "DELETED" =>
-            logInfo("TPR Object deleted externally. Cleaning up")
-            stop()
-          // TODO: are there other todo's for a clean kill while job is running?
-          case Success(w: WatchObject) =>
-            // Log a warning just in case, but this should almost certainly never happen
-            logWarning(s"Unexpected response received. $w")
-            deleteJobResource()
-            workingWithSparkJobResource = false
-          case Failure(e: Throwable) =>
-            logWarning(e.getMessage)
-            deleteJobResource()
-            workingWithSparkJobResource = false // in case watcher fails early on
-        }
-      }
+  private def updateStatus(key: String, value: Any): Unit = {
+    logInfo(s"Updating Job Resource with name. $jobResourceName")
+    sparkJobResourceController.foreach(controller =>
+      Try(
+        controller.updateJobObject(jobResourceName, value.toString, s"/status/$key")) match {
+      case Success(_) =>
+        logInfo(s"Updated Job Resource with name. $jobResourceName")
+      case Failure(e: SparkException) if e.getMessage startsWith "404" =>
+        logWarning(s"Possible deletion of jobResource before backend start")
+      case Failure(e: Exception) =>
+        logWarning(s"SparkJob object not updated. ${e.getMessage}")
     })
-  }
-
-  private def deleteJobResource(): Unit = {
-    try {
-      sparkJobResourceCtrller.deleteJobObject(jobResourceName)
-    } catch {
-      case e: SparkException =>
-        logError(s"SparkJob object not deleted. ${e.getMessage}")
-      // what else do we need to do here ?
-    }
   }
 
   override def applicationId(): String = conf.get("spark.app.id", super.applicationId())
@@ -251,6 +218,11 @@ private[spark] class KubernetesClusterSchedulerBackend(
 
   override def start(): Unit = {
     super.start()
+
+    updateStatus(STATUS_JOB_STATE, JobState.RUNNING)
+    updateStatus(STATUS_DRIVER_UI, "http://localhost:8001/api/v1/namespaces" +
+      s"/default/pods/$kubernetesDriverPodName:${SparkUI.getUIPort(conf)}/proxy/")
+
     executorWatchResource.set(kubernetesClient.pods().withLabel(SPARK_APP_ID_LABEL, applicationId())
       .watch(new ExecutorPodsWatcher()))
 
@@ -271,10 +243,13 @@ private[spark] class KubernetesClusterSchedulerBackend(
     // stop allocation of new resources and caches.
     allocator.shutdown()
     shufflePodCache.foreach(_.stop())
-    resourceWatcherPool.shutdown()
 
     // send stop message to executors so they shut down cleanly
     super.stop()
+    updateStatus(STATUS_CURRENT_EXECUTORS, STATUS_NOT_AVAILABLE)
+    updateStatus(STATUS_DRIVER_UI, STATUS_NOT_AVAILABLE)
+    updateStatus(STATUS_COMPLETION_TIMESTAMP, Calendar.getInstance().getTime().toString())
+    updateStatus(STATUS_JOB_STATE, JobState.FINISHED)
 
     // then delete the executor pods
     // TODO investigate why Utils.tryLogNonFatalError() doesn't work in this context.
@@ -431,6 +406,7 @@ private[spark] class KubernetesClusterSchedulerBackend(
   }
 
   override def doRequestTotalExecutors(requestedTotal: Int): Future[Boolean] = Future[Boolean] {
+    updateStatus(STATUS_DESIRED_EXECUTORS, requestedTotal)
     totalExpectedExecutors.set(requestedTotal)
     true
   }

@@ -57,7 +57,7 @@ private[spark] case class WatchObject(`type`: String, `object`: SparkJobState)
  */
 private[spark] class TPRCrudCalls(k8sClient: KubernetesClient,
     kubeToken: Option[String] = None) extends Logging {
-  private val kubeMaster: String = KUBERNETES_MASTER_INTERNAL_URL
+  private val kubeMaster: String = k8sClient.getMasterUrl().toString
 
   implicit val formats: Formats = DefaultFormats + JobStateSerDe
 
@@ -72,7 +72,7 @@ private[spark] class TPRCrudCalls(k8sClient: KubernetesClient,
 
   def createJobObject(name: String, keyValuePairs: Map[String, Any]): Unit = {
     val resourceObject =
-      SparkJobState(TPR_API_VERSION, TPR_KIND, Metadata(name), keyValuePairs)
+      SparkJobState(s"$TPR_API_GROUP/$TPR_API_VERSION", TPR_KIND, Metadata(name), keyValuePairs)
     val payload = parse(write(resourceObject))
 
     val requestBody = RequestBody

@@ -17,7 +17,7 @@
 package org.apache.spark.deploy.kubernetes.submit
 
 import java.io.File
-import java.util.Collections
+import java.util.{Calendar, Collections}
 
 import io.fabric8.kubernetes.api.model.{ContainerBuilder, EnvVarBuilder, OwnerReferenceBuilder, PodBuilder}
 import scala.collection.JavaConverters._
@@ -75,22 +75,26 @@ private[spark] class Client(
     org.apache.spark.internal.config.DRIVER_JAVA_OPTIONS)
 
   // create resource of kind - SparkJob representing the deployed spark app
-  private val sparkJobCtrller = new TPRCrudCalls(kubernetesClientProvider.get)
-  private val jobResourceName = s"sparkJob-${sparkConf.get(KUBERNETES_NAMESPACE)}-$appName"
+  private val sparkJobController = new TPRCrudCalls(kubernetesClientProvider.get)
   private val statusMap = Map(
-    "image" -> driverDockerImage,
-    "state" -> JobState.QUEUED,
-    "numExecutors" -> sparkConf.getInt("spark.executor.instances", 1),
-    "sparkDriver" -> kubernetesDriverPodName
+    STATUS_CREATION_TIMESTAMP -> Calendar.getInstance().getTime().toString(),
+    STATUS_COMPLETION_TIMESTAMP -> STATUS_NOT_AVAILABLE,
+    STATUS_DRIVER -> kubernetesDriverPodName,
+    STATUS_DRIVER_IMAGE -> driverDockerImage,
+    STATUS_EXECUTOR_IMAGE -> sparkConf.get(EXECUTOR_DOCKER_IMAGE),
+    STATUS_JOB_STATE -> JobState.QUEUED,
+    STATUS_DESIRED_EXECUTORS -> sparkConf.getInt("spark.executor.instances", 1),
+    STATUS_CURRENT_EXECUTORS -> 0,
+    STATUS_DRIVER_UI -> STATUS_PENDING
   )
 
   // Failure might be due to TPR inexistence or maybe we're stuck in the 10 minute lag
   // TODO: in the latter case we can attempt a retry depending on the rc
   // This also assumes that once we fail at creation, we won't bother trying
   // anything on the resource for the lifetime of the app
-  Try(sparkJobCtrller.createJobObject(jobResourceName, statusMap)) match {
+  Try(sparkJobController.createJobObject(kubernetesAppId, statusMap)) match {
     case Success(_) => sparkConf.set("spark.kubernetes.jobResourceSet", "true")
-      sparkConf.set("spark.kubernetes.jobResourceName", jobResourceName)
+      sparkConf.set("spark.kubernetes.jobResourceName", kubernetesAppId)
     case Failure(_: SparkException) => // if e.getMessage startsWith "40" =>
       sparkConf.set("spark.kubernetes.jobResourceSet", "false")
   }
