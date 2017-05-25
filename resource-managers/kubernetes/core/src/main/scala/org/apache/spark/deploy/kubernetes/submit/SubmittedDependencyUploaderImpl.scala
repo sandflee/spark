@@ -26,7 +26,7 @@ import com.google.common.io.{BaseEncoding, Files}
 import okhttp3.RequestBody
 import retrofit2.Call
 
-import org.apache.spark.{SSLOptions, SparkException}
+import org.apache.spark.{SparkException, SSLOptions}
 import org.apache.spark.deploy.kubernetes.CompressionUtils
 import org.apache.spark.deploy.rest.kubernetes.{PodMonitoringCredentials, ResourceStagingServiceRetrofit, RetrofitClientFactory}
 import org.apache.spark.util.Utils

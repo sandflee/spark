@@ -20,8 +20,8 @@ import java.io.File
 
 import com.google.common.base.Charsets
 import com.google.common.io.BaseEncoding
-import io.fabric8.kubernetes.client.utils.HttpClientUtils
 import io.fabric8.kubernetes.client.{Config, ConfigBuilder, DefaultKubernetesClient, KubernetesClient}
+import io.fabric8.kubernetes.client.utils.HttpClientUtils
 import okhttp3.{ConnectionPool, Dispatcher}
 
 import org.apache.spark.util.ThreadUtils

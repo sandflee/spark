@@ -271,9 +271,9 @@ package object config extends Logging {
   // Spark resource staging server.
   private[spark] val RESOURCE_STAGING_SERVER_API_SERVER_URL =
     ConfigBuilder("spark.kubernetes.resourceStagingServer.apiServer.url")
-      .doc("URL for the Kubernetes API server. The resource staging server monitors the API server" +
-        " to check when pods no longer are using mounted resources. Note that this isn't to be" +
-        " used in Spark applications, as the API server URL should be set via spark.master.")
+      .doc("URL for the Kubernetes API server. The resource staging server monitors the API" +
+        " server to check when pods no longer are using mounted resources. Note that this isn't" +
+        " to be used in Spark applications, as the API server URL should be set via spark.master.")
       .stringConf
       .createWithDefault(KUBERNETES_MASTER_INTERNAL_URL)
 
