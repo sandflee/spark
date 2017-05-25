@@ -17,7 +17,6 @@
 package org.apache.spark.deploy.rest.kubernetes
 
 import java.io.File
-import java.util.Timer
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.jaxrs.json.JacksonJaxbJsonProvider
