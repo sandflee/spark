@@ -69,7 +69,7 @@ private[spark] trait ResourceStagingService {
       @FormDataParam("podLabels") podLabels: Map[String, String],
       @FormDataParam("podNamespace") podNamespace: String,
       @FormDataParam("resources") resources: InputStream,
-      @FormDataParam("kubernetesCredentials") kubernetesCredentials: KubernetesCredentials)
+      @FormDataParam("kubernetesCredentials") kubernetesCredentials: PodMonitoringCredentials)
       : SubmittedResourceIdAndSecret
 
   /**

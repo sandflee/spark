@@ -24,6 +24,7 @@ import com.fasterxml.jackson.module.scala.DefaultScalaModule
 import com.google.common.io.ByteStreams
 import okhttp3.{RequestBody, ResponseBody}
 import org.scalatest.BeforeAndAfter
+import org.scalatest.mock.MockitoSugar.mock
 import retrofit2.Call
 
 import org.apache.spark.{SparkFunSuite, SSLOptions}
@@ -40,12 +41,20 @@ import org.apache.spark.util.Utils
  * receive streamed uploads and can stream downloads.
  */
 class ResourceStagingServerSuite extends SparkFunSuite with BeforeAndAfter {
+  private var serviceImpl: ResourceStagingService = _
+  private var stagedResourcesExpirationManager: StagedResourcesExpirationManager = _
   private val OBJECT_MAPPER = new ObjectMapper().registerModule(new DefaultScalaModule)
 
   private val serverPort = new ServerSocket(0).getLocalPort
-  private val serviceImpl = new ResourceStagingServiceImpl(Utils.createTempDir())
+
   private val sslOptionsProvider = new SettableReferenceSslOptionsProvider()
   private val server = new ResourceStagingServer(serverPort, serviceImpl, sslOptionsProvider)
+
+  before {
+    stagedResourcesExpirationManager = mock[StagedResourcesExpirationManager]
+    new ResourceStagingServiceImpl(
+      new StagedResourcesStoreImpl(Utils.createTempDir()), stagedResourcesExpirationManager)
+  }
 
   after {
     server.stop()

@@ -269,11 +269,40 @@ package object config extends Logging {
       .createWithDefaultString("1s")
 
   // Spark resource staging server.
+  private[spark] val RESOURCE_STAGING_SERVER_API_SERVER_URL =
+    ConfigBuilder("spark.kubernetes.resourceStagingServer.apiServer.url")
+      .doc("URL for the Kubernetes API server. The resource staging server monitors the API server" +
+        " to check when pods no longer are using mounted resources. Note that this isn't to be" +
+        " used in Spark applications, as the API server URL should be set via spark.master.")
+      .stringConf
+      .createWithDefault(KUBERNETES_MASTER_INTERNAL_URL)
+
+  private[spark] val RESOURCE_STAGING_SERVER_API_SERVER_CA_CERT_FILE =
+    ConfigBuilder("spark.kubernetes.resourceStagingServer.apiServer.caCertFile")
+      .doc("CA certificate for the resource staging server to use when contacting the Kubernetes" +
+        " API server over TLS.")
+      .stringConf
+      .createOptional
+
   private[spark] val RESOURCE_STAGING_SERVER_PORT =
     ConfigBuilder("spark.kubernetes.resourceStagingServer.port")
       .doc("Port for the Kubernetes resource staging server to listen on.")
       .intConf
       .createWithDefault(10000)
+
+  private[spark] val RESOURCE_STAGING_SERVER_RESOURCE_TTL =
+    ConfigBuilder("spark.kubernetes.resourceStagingServer.resourceTtl")
+      .doc("Time for which resources should remain on the resource staging server before they" +
+        " cleaned up. Note that this is the time period after the resource staging server first" +
+        " detects that no pods are present that are using their mounted resources.")
+      .timeConf(TimeUnit.MILLISECONDS)
+      .createWithDefaultString("5m")
+
+  private[spark] val RESOURCE_STAGING_SERVER_CLEANUP_INTERVAL =
+    ConfigBuilder("spark.kubernetes.resourceStagingServer.resourceCleanupInterval")
+      .doc("Time between inspections for resources that can be cleaned up.")
+      .timeConf(TimeUnit.MILLISECONDS)
+      .createWithDefaultString("5m")
 
   private[spark] val RESOURCE_STAGING_SERVER_KEY_PEM =
     ConfigBuilder("spark.ssl.kubernetes.resourceStagingServer.keyPem")

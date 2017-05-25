@@ -17,6 +17,7 @@
 package org.apache.spark.deploy.rest.kubernetes
 
 import java.io.File
+import java.util.Timer
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.jaxrs.json.JacksonJaxbJsonProvider
@@ -98,8 +99,25 @@ object ResourceStagingServer {
     } else {
       new SparkConf(true)
     }
+    val apiServerUri = sparkConf.get(RESOURCE_STAGING_SERVER_API_SERVER_URL)
+    val caCertFile = sparkConf.get(RESOURCE_STAGING_SERVER_API_SERVER_CA_CERT_FILE)
+        .map(new File(_))
+    val expiredResourceTtlMs = sparkConf.get(RESOURCE_STAGING_SERVER_RESOURCE_TTL)
+    val resourceCleanupIntervalMs = sparkConf.get(RESOURCE_STAGING_SERVER_CLEANUP_INTERVAL)
     val dependenciesRootDir = Utils.createTempDir(namePrefix = "local-application-dependencies")
-    val serviceInstance = new ResourceStagingServiceImpl(dependenciesRootDir)
+    val kubernetesClientProvider = new ResourceStagingServiceKubernetesClientProviderImpl(
+        apiServerUri, caCertFile)
+    val stagedResourcesStore = new StagedResourcesStoreImpl(dependenciesRootDir)
+    val expirationTimer = new Timer(true)
+    val stagedResourcesExpirationManager = new StagedResourcesExpirationManagerImpl(
+      kubernetesClientProvider = kubernetesClientProvider,
+      stagedResourcesStore = stagedResourcesStore,
+      expirationTimer = expirationTimer,
+      expiredResourceTtlMs = expiredResourceTtlMs,
+      resourceCleanupIntervalMs = resourceCleanupIntervalMs)
+    stagedResourcesExpirationManager.startMonitoringForExpiredResources()
+    val serviceInstance = new ResourceStagingServiceImpl(
+        stagedResourcesStore, stagedResourcesExpirationManager)
     val sslOptionsProvider = new ResourceStagingServerSslOptionsProviderImpl(sparkConf)
     val server = new ResourceStagingServer(
       port = sparkConf.get(RESOURCE_STAGING_SERVER_PORT),
