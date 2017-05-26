@@ -28,7 +28,7 @@ import org.scalatest.mock.MockitoSugar.mock
 import retrofit2.Call
 
 import org.apache.spark.{SparkFunSuite, SSLOptions}
-import org.apache.spark.deploy.kubernetes.{KubernetesCredentials, SSLUtils}
+import org.apache.spark.deploy.kubernetes.SSLUtils
 import org.apache.spark.util.Utils
 
 /**
@@ -43,17 +43,18 @@ import org.apache.spark.util.Utils
 class ResourceStagingServerSuite extends SparkFunSuite with BeforeAndAfter {
   private var serviceImpl: ResourceStagingService = _
   private var stagedResourcesExpirationManager: StagedResourcesExpirationManager = _
+  private var server: ResourceStagingServer = _
   private val OBJECT_MAPPER = new ObjectMapper().registerModule(new DefaultScalaModule)
 
   private val serverPort = new ServerSocket(0).getLocalPort
 
   private val sslOptionsProvider = new SettableReferenceSslOptionsProvider()
-  private val server = new ResourceStagingServer(serverPort, serviceImpl, sslOptionsProvider)
 
   before {
     stagedResourcesExpirationManager = mock[StagedResourcesExpirationManager]
-    new ResourceStagingServiceImpl(
+    serviceImpl = new ResourceStagingServiceImpl(
       new StagedResourcesStoreImpl(Utils.createTempDir()), stagedResourcesExpirationManager)
+    server = new ResourceStagingServer(serverPort, serviceImpl, sslOptionsProvider)
   }
 
   after {
@@ -99,7 +100,7 @@ class ResourceStagingServerSuite extends SparkFunSuite with BeforeAndAfter {
       okhttp3.MediaType.parse(MediaType.APPLICATION_JSON), labelsJson)
     val namespaceRequestBody = RequestBody.create(
       okhttp3.MediaType.parse(MediaType.TEXT_PLAIN), namespace)
-    val kubernetesCredentials = KubernetesCredentials(Some("token"), Some("ca-cert"), None, None)
+    val kubernetesCredentials = PodMonitoringCredentials(None, None, None)
     val kubernetesCredentialsString = OBJECT_MAPPER.writer()
       .writeValueAsString(kubernetesCredentials)
     val kubernetesCredentialsBody = RequestBody.create(

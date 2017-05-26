@@ -16,15 +16,15 @@
  */
 package org.apache.spark.deploy.rest.kubernetes
 
-import java.io.{File, FileOutputStream, InputStream}
+import java.io.{File, FileOutputStream, InputStream, IOException}
 import java.security.SecureRandom
 import java.util.UUID
 
 import com.google.common.io.{BaseEncoding, ByteStreams}
+import org.apache.commons.io.FileUtils
 import scala.collection.concurrent.TrieMap
 
 import org.apache.spark.SparkException
-import org.apache.spark.deploy.kubernetes.submit.SubmittedResourceIdAndSecret
 import org.apache.spark.internal.Logging
 import org.apache.spark.util.Utils
 
@@ -94,9 +94,13 @@ private[spark] class StagedResourcesStoreImpl(dependenciesRootDir: File)
   override def removeResources(resourceId: String): Unit = {
     stagedResources.remove(resourceId)
         .map(_.resourcesFile.getParentFile)
-        .map { resourcesDirectory =>
-      if (!resourcesDirectory.delete) {
-        logWarning(s"Failed to delete resources directory at ${resourcesDirectory.getAbsolutePath}")
+        .foreach { resourcesDirectory =>
+      try {
+        FileUtils.deleteDirectory(resourcesDirectory)
+      } catch {
+        case e: IOException =>
+          logWarning(s"Failed to delete resources directory" +
+            s" at ${resourcesDirectory.getAbsolutePath}", e)
       }
     }
   }
