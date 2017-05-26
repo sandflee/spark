@@ -22,7 +22,7 @@ import io.fabric8.kubernetes.api.model.{ConfigMap, ConfigMapBuilder, DoneablePod
 import io.fabric8.kubernetes.client.{KubernetesClient, Watch}
 import io.fabric8.kubernetes.client.dsl.{MixedOperation, NamespaceListVisitFromServerGetDeleteRecreateWaitApplicable, PodResource}
 import org.hamcrest.{BaseMatcher, Description}
-import org.mockito.{AdditionalAnswers, ArgumentCaptor, Mock, MockitoAnnotations}
+import org.mockito.{AdditionalAnswers, ArgumentCaptor, Mock, Mockito, MockitoAnnotations}
 import org.mockito.Matchers.{any, anyVararg, argThat, eq => mockitoEq}
 import org.mockito.Mockito.{times, verify, when}
 import org.mockito.invocation.InvocationOnMock
@@ -35,6 +35,7 @@ import org.apache.spark.{SparkConf, SparkFunSuite}
 import org.apache.spark.deploy.kubernetes.SparkPodInitContainerBootstrap
 import org.apache.spark.deploy.kubernetes.config._
 import org.apache.spark.deploy.kubernetes.constants._
+import org.apache.spark.deploy.kubernetes.tpr.{TPRCrudCalls, TPRCrudCallsImpl}
 
 class ClientV2Suite extends SparkFunSuite with BeforeAndAfter {
   private val JARS_RESOURCE = SubmittedResourceIdAndSecret("jarsId", "jarsSecret")
@@ -146,6 +147,8 @@ class ClientV2Suite extends SparkFunSuite with BeforeAndAfter {
   private var namedPodResource: PodResource[Pod, DoneablePod] = _
   @Mock
   private var watch: Watch = _
+  @Mock
+  private var tprController: TPRCrudCalls = _
 
   before {
     MockitoAnnotations.initMocks(this)
@@ -200,6 +203,7 @@ class ClientV2Suite extends SparkFunSuite with BeforeAndAfter {
 
   test("Run with dependency uploader") {
     expectationsForNoMountedCredentials()
+    expectationsForTPRCrudCallsClient()
     when(initContainerComponentsProvider
         .provideInitContainerSubmittedDependencyUploader(ALL_EXPECTED_LABELS))
         .thenReturn(Some(submittedDependencyUploader))
@@ -233,6 +237,7 @@ class ClientV2Suite extends SparkFunSuite with BeforeAndAfter {
   test("Run without dependency uploader") {
     expectationsForNoMountedCredentials()
     expectationsForNoDependencyUploader()
+    expectationsForTPRCrudCallsClient()
     runAndVerifyDriverPodHasCorrectProperties()
     val resourceListArgumentCaptor = ArgumentCaptor.forClass(classOf[HasMetadata])
     verify(kubernetesClient).resourceList(resourceListArgumentCaptor.capture())
@@ -250,6 +255,7 @@ class ClientV2Suite extends SparkFunSuite with BeforeAndAfter {
 
   test("Run with mounted credentials") {
     expectationsForNoDependencyUploader()
+    expectationsForTPRCrudCallsClient()
     when(credentialsMounter.createCredentialsSecret()).thenReturn(Some(CREDENTIALS_SECRET))
     when(credentialsMounter.mountDriverKubernetesCredentials(
         any(), mockitoEq(DRIVER_CONTAINER_NAME), mockitoEq(Some(CREDENTIALS_SECRET))))
@@ -289,6 +295,7 @@ class ClientV2Suite extends SparkFunSuite with BeforeAndAfter {
   test("Waiting for completion should await completion on the status watcher.") {
     expectationsForNoMountedCredentials()
     expectationsForNoDependencyUploader()
+    expectationsForTPRCrudCallsClient()
     new Client(
       APP_NAME,
       APP_ID,
@@ -315,6 +322,12 @@ class ClientV2Suite extends SparkFunSuite with BeforeAndAfter {
     when(initContainerComponentsProvider
       .provideInitContainerConfigMapBuilder(None))
       .thenReturn(initContainerConfigMapBuilder)
+  }
+
+  private def expectationsForTPRCrudCallsClient(): Unit = {
+    Mockito.doNothing().when(tprController).createJobObject(any[String], any[Map[String, Any]])
+    Mockito.doNothing().when(tprController).deleteJobObject(any[String])
+    Mockito.doNothing().when(tprController).updateJobObject(any[String], any[String], any[String])
   }
 
   private def expectationsForNoMountedCredentials(): Unit = {

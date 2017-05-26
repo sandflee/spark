@@ -26,7 +26,7 @@ import scala.util.{Failure, Success, Try}
 import org.apache.spark.{SparkConf, SparkException}
 import org.apache.spark.deploy.kubernetes.config._
 import org.apache.spark.deploy.kubernetes.constants._
-import org.apache.spark.deploy.kubernetes.tpr.{JobState, TPRCrudCalls}
+import org.apache.spark.deploy.kubernetes.tpr.{JobState, TPRCrudCallsImpl}
 import org.apache.spark.deploy.rest.kubernetes.ResourceStagingServerSslOptionsProviderImpl
 import org.apache.spark.internal.Logging
 import org.apache.spark.launcher.SparkLauncher
@@ -75,7 +75,7 @@ private[spark] class Client(
     org.apache.spark.internal.config.DRIVER_JAVA_OPTIONS)
 
   // create resource of kind - SparkJob representing the deployed spark app
-  private val sparkJobController = new TPRCrudCalls(kubernetesClientProvider.get)
+  private val sparkJobController = new TPRCrudCallsImpl(kubernetesClientProvider.get)
   private val statusMap = Map(
     STATUS_CREATION_TIMESTAMP -> Calendar.getInstance().getTime().toString(),
     STATUS_COMPLETION_TIMESTAMP -> STATUS_NOT_AVAILABLE,
@@ -95,7 +95,7 @@ private[spark] class Client(
   Try(sparkJobController.createJobObject(kubernetesAppId, statusMap)) match {
     case Success(_) => sparkConf.set("spark.kubernetes.jobResourceSet", "true")
       sparkConf.set("spark.kubernetes.jobResourceName", kubernetesAppId)
-    case Failure(_: SparkException) => // if e.getMessage startsWith "40" =>
+    case Failure(_) =>
       sparkConf.set("spark.kubernetes.jobResourceSet", "false")
   }
 

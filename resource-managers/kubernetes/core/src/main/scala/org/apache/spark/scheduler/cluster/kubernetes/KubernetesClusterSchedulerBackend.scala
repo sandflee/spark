@@ -35,7 +35,7 @@ import org.apache.spark.{SparkContext, SparkEnv, SparkException}
 import org.apache.spark.deploy.kubernetes.{ConfigurationUtils, SparkPodInitContainerBootstrap}
 import org.apache.spark.deploy.kubernetes.config._
 import org.apache.spark.deploy.kubernetes.constants._
-import org.apache.spark.deploy.kubernetes.tpr.{JobState, TPRCrudCalls}
+import org.apache.spark.deploy.kubernetes.tpr.{JobState, TPRCrudCallsImpl}
 import org.apache.spark.rpc.{RpcCallContext, RpcEndpointAddress, RpcEnv}
 import org.apache.spark.scheduler.TaskSchedulerImpl
 import org.apache.spark.scheduler.cluster.CoarseGrainedClusterMessages.{RetrieveSparkAppConfig, SparkAppConfig}
@@ -168,14 +168,14 @@ private[spark] class KubernetesClusterSchedulerBackend(
           }
         }
       }
-      updateStatus(STATUS_CURRENT_EXECUTORS, totalRegisteredExecutors.get())
+      updateJobResourceStatus(STATUS_CURRENT_EXECUTORS, totalRegisteredExecutors.get())
     }
   }
 
   private val jobResourceName = conf.get("spark.kubernetes.jobResourceName", "")
   private val sparkJobResourceController =
     if (conf.get("spark.kubernetes.jobResourceSet", "false").toBoolean) {
-      Some(new TPRCrudCalls(kubernetesClient))
+      Some(new TPRCrudCallsImpl(kubernetesClient))
     } else {
       None
     }
@@ -196,7 +196,7 @@ private[spark] class KubernetesClusterSchedulerBackend(
 
   }
 
-  private def updateStatus(key: String, value: Any): Unit = {
+  private def updateJobResourceStatus(key: String, value: Any): Unit = {
     logInfo(s"Updating Job Resource with name. $jobResourceName")
     sparkJobResourceController.foreach(controller =>
       Try(
@@ -219,9 +219,10 @@ private[spark] class KubernetesClusterSchedulerBackend(
   override def start(): Unit = {
     super.start()
 
-    updateStatus(STATUS_JOB_STATE, JobState.RUNNING)
-    updateStatus(STATUS_DRIVER_UI, "http://localhost:8001/api/v1/namespaces" +
-      s"/default/pods/$kubernetesDriverPodName:${SparkUI.getUIPort(conf)}/proxy/")
+    Seq((STATUS_JOB_STATE, JobState.RUNNING),
+      (STATUS_DRIVER_UI, "http://localhost:8001/api/v1/namespaces" +
+        s"/default/pods/$kubernetesDriverPodName:${SparkUI.getUIPort(conf)}/proxy/")
+    ) foreach {case (k, v) => updateJobResourceStatus(k, v)}
 
     executorWatchResource.set(kubernetesClient.pods().withLabel(SPARK_APP_ID_LABEL, applicationId())
       .watch(new ExecutorPodsWatcher()))
@@ -246,10 +247,14 @@ private[spark] class KubernetesClusterSchedulerBackend(
 
     // send stop message to executors so they shut down cleanly
     super.stop()
-    updateStatus(STATUS_CURRENT_EXECUTORS, STATUS_NOT_AVAILABLE)
-    updateStatus(STATUS_DRIVER_UI, STATUS_NOT_AVAILABLE)
-    updateStatus(STATUS_COMPLETION_TIMESTAMP, Calendar.getInstance().getTime().toString())
-    updateStatus(STATUS_JOB_STATE, JobState.FINISHED)
+    Seq(
+      (STATUS_CURRENT_EXECUTORS, STATUS_NOT_AVAILABLE),
+      (STATUS_DRIVER_UI, STATUS_NOT_AVAILABLE),
+      (STATUS_COMPLETION_TIMESTAMP, Calendar.getInstance().getTime().toString()),
+      (STATUS_JOB_STATE, JobState.FINISHED)
+    ) foreach {
+      case (key, value) => updateJobResourceStatus(key, value)
+    }
 
     // then delete the executor pods
     // TODO investigate why Utils.tryLogNonFatalError() doesn't work in this context.
@@ -406,7 +411,7 @@ private[spark] class KubernetesClusterSchedulerBackend(
   }
 
   override def doRequestTotalExecutors(requestedTotal: Int): Future[Boolean] = Future[Boolean] {
-    updateStatus(STATUS_DESIRED_EXECUTORS, requestedTotal)
+    updateJobResourceStatus(STATUS_DESIRED_EXECUTORS, requestedTotal)
     totalExpectedExecutors.set(requestedTotal)
     true
   }

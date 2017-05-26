@@ -34,6 +34,18 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.SparkException
 import org.apache.spark.util.ThreadUtils
 
+private[spark] trait TPRCrudCalls {
+  /**
+   * This trait contains currently acceptable operations on the SparkJob Resource
+   * CRUD + Watch
+   */
+  def createJobObject(name: String, keyValuePairs: Map[String, Any]): Unit
+  def deleteJobObject(tprObjectName: String): Unit
+  def getJobObject(name: String): SparkJobState
+  def updateJobObject(name: String, value: String, fieldPath: String): Unit
+  def watchJobObject(): Future[WatchObject]
+}
+
 private[spark] case class Metadata(name: String,
     uid: Option[String] = None,
     labels: Option[Map[String, String]] = None,
@@ -47,30 +59,29 @@ private[spark] case class SparkJobState(apiVersion: String,
 private[spark] case class WatchObject(`type`: String, `object`: SparkJobState)
 
 /**
+ * Prereq - This assumes the kubernetes API has been extended using a TPR of name: Spark-job
+ * See conf/kubernetes-custom-resource.yaml for a model
+ *
  * CRUD + Watch Operations on SparkJob Resource
  *
  * This class contains all CRUD+Watch implementations performed
  * on the SparkJob Resource used to expose the state of a spark job
  * in kubernetes (visible via kubectl or through the k8s dashboard).
- *
- *
  */
-private[spark] class TPRCrudCalls(k8sClient: KubernetesClient,
-    kubeToken: Option[String] = None) extends Logging {
+private[spark] class TPRCrudCallsImpl(k8sClient: KubernetesClient,
+    kubeToken: Option[String] = None) extends Logging with TPRCrudCalls {
   private val kubeMaster: String = k8sClient.getMasterUrl().toString
-
-  implicit val formats: Formats = DefaultFormats + JobStateSerDe
-
   private val httpClient: OkHttpClient =
     extractHttpClientFromK8sClient(k8sClient.asInstanceOf[BaseClient])
-
   private val namespace: String = k8sClient.getNamespace
   private var watchSource: BufferedSource = _
   private lazy val buffer = new Buffer()
+
+  private implicit val formats: Formats = DefaultFormats + JobStateSerDe
   private implicit val ec: ThreadPoolExecutor = ThreadUtils
     .newDaemonCachedThreadPool("tpr-watcher-pool")
 
-  def createJobObject(name: String, keyValuePairs: Map[String, Any]): Unit = {
+  override def createJobObject(name: String, keyValuePairs: Map[String, Any]): Unit = {
     val resourceObject =
       SparkJobState(s"$TPR_API_GROUP/$TPR_API_VERSION", TPR_KIND, Metadata(name), keyValuePairs)
     val payload = parse(write(resourceObject))
@@ -98,7 +109,7 @@ private[spark] class TPRCrudCalls(k8sClient: KubernetesClient,
       s"${pretty(render(parse(write(resourceObject))))}")
   }
 
-  def deleteJobObject(tprObjectName: String): Unit = {
+  override def deleteJobObject(tprObjectName: String): Unit = {
     val requestSegments = Seq(
       "apis", TPR_API_GROUP, TPR_API_VERSION, "namespaces", namespace, "sparkjobs", tprObjectName)
     val url = generateHttpUrl(requestSegments)
@@ -118,7 +129,7 @@ private[spark] class TPRCrudCalls(k8sClient: KubernetesClient,
     logInfo(s"Successfully deleted resource $tprObjectName")
   }
 
-  def getJobObject(name: String): SparkJobState = {
+  override def getJobObject(name: String): SparkJobState = {
     val requestSegments = Seq(
       "apis", TPR_API_GROUP, TPR_API_VERSION, "namespaces", namespace, "sparkjobs", name)
     val url = generateHttpUrl(requestSegments)
@@ -139,7 +150,7 @@ private[spark] class TPRCrudCalls(k8sClient: KubernetesClient,
     read[SparkJobState](response.body().string())
   }
 
-  def updateJobObject(name: String, value: String, fieldPath: String): Unit = {
+  override def updateJobObject(name: String, value: String, fieldPath: String): Unit = {
     val payload = List(
       ("op" -> "replace") ~ ("path" -> fieldPath) ~ ("value" -> value))
     val requestBody =
@@ -172,7 +183,7 @@ private[spark] class TPRCrudCalls(k8sClient: KubernetesClient,
  * The future is completed on a Delete event or source exhaustion.
  * This method also relies on the assumption of one sparkjob per namespace
  */
-  def watchJobObject(): Future[WatchObject] = {
+  override def watchJobObject(): Future[WatchObject] = {
     val watchClient = httpClient.newBuilder().readTimeout(0, TimeUnit.MILLISECONDS).build()
     val requestSegments = Seq(
       "apis", TPR_API_GROUP, TPR_API_VERSION, "namespaces", namespace, "sparkjobs")
