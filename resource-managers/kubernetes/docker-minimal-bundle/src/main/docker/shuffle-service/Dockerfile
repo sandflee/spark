@@ -15,12 +15,14 @@
 # limitations under the License.
 #
 
-FROM java
+FROM openjdk:8-alpine
 
 # If this docker file is being used in the context of building your images from a Spark distribution, the docker build
 # command should be invoked from the top level directory of the Spark distribution. E.g.:
 # docker build -t spark-shuffle:latest -f dockerfiles/shuffle/Dockerfile .
 
+RUN apk upgrade --update
+RUN apk add --update bash
 RUN mkdir -p /opt/spark
 RUN touch /opt/spark/RELEASE
 

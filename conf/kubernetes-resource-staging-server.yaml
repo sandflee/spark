@@ -16,7 +16,7 @@ spec:
             name: spark-resource-staging-server-config
       containers:
         - name: spark-resource-staging-server
-          image: docker.oa.com:8080/moonfang/resource-staging-server:v2
+          image: kubespark/spark-resource-staging-server:v2.1.0-kubernetes-0.1.0-alpha.3
           resources:
             requests:
               cpu: 100m
