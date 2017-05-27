@@ -16,7 +16,20 @@
  */
 package org.apache.spark.deploy.rest.kubernetes
 
-case class PodMonitoringCredentials(
-    oauthTokenBase64: Option[String],
-    clientKeyDataBase64: Option[String],
-    clientCertDataBase64: Option[String])
+import com.fasterxml.jackson.core.`type`.TypeReference
+import com.fasterxml.jackson.module.scala.JsonScalaEnumeration
+
+object StagedResourcesOwnerType extends Enumeration {
+  type OwnerType = Value
+  // In more generic scenarios, we might want to be watching Deployments, etc.
+  val Pod = Value
+}
+
+class StagedResourcesOwnerTypeReference extends TypeReference[StagedResourcesOwnerType.type]
+
+case class StagedResourcesOwner(
+    ownerNamespace: String,
+    ownerLabels: Map[String, String],
+    ownerMonitoringCredentials: StagedResourcesOwnerMonitoringCredentials,
+    @JsonScalaEnumeration(classOf[StagedResourcesOwnerTypeReference])
+        ownerType: StagedResourcesOwnerType.OwnerType)

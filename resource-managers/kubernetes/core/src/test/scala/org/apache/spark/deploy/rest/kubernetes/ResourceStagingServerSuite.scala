@@ -42,7 +42,7 @@ import org.apache.spark.util.Utils
  */
 class ResourceStagingServerSuite extends SparkFunSuite with BeforeAndAfter {
   private var serviceImpl: ResourceStagingService = _
-  private var stagedResourcesExpirationManager: StagedResourcesExpirationManager = _
+  private var stagedResourcesCleaner: StagedResourcesCleaner = _
   private var server: ResourceStagingServer = _
   private val OBJECT_MAPPER = new ObjectMapper().registerModule(new DefaultScalaModule)
 
@@ -51,9 +51,9 @@ class ResourceStagingServerSuite extends SparkFunSuite with BeforeAndAfter {
   private val sslOptionsProvider = new SettableReferenceSslOptionsProvider()
 
   before {
-    stagedResourcesExpirationManager = mock[StagedResourcesExpirationManager]
+    stagedResourcesCleaner = mock[StagedResourcesCleaner]
     serviceImpl = new ResourceStagingServiceImpl(
-      new StagedResourcesStoreImpl(Utils.createTempDir()), stagedResourcesExpirationManager)
+      new StagedResourcesStoreImpl(Utils.createTempDir()), stagedResourcesCleaner)
     server = new ResourceStagingServer(serverPort, serviceImpl, sslOptionsProvider)
   }
 
@@ -93,20 +93,18 @@ class ResourceStagingServerSuite extends SparkFunSuite with BeforeAndAfter {
     val resourcesBytes = Array[Byte](1, 2, 3, 4)
     val labels = Map("label1" -> "label1Value", "label2" -> "label2value")
     val namespace = "namespace"
-    val labelsJson = OBJECT_MAPPER.writer().writeValueAsString(labels)
+    val resourcesOwner = StagedResourcesOwner(
+      ownerLabels = labels,
+      ownerNamespace = namespace,
+      ownerMonitoringCredentials = StagedResourcesOwnerMonitoringCredentials(None, None, None),
+      ownerType = StagedResourcesOwnerType.Pod)
+    val resourcesOwnerJson = OBJECT_MAPPER.writeValueAsString(resourcesOwner)
+    val resourcesOwnerRequestBody = RequestBody.create(
+        okhttp3.MediaType.parse(MediaType.APPLICATION_JSON), resourcesOwnerJson)
     val resourcesRequestBody = RequestBody.create(
-      okhttp3.MediaType.parse(MediaType.MULTIPART_FORM_DATA), resourcesBytes)
-    val labelsRequestBody = RequestBody.create(
-      okhttp3.MediaType.parse(MediaType.APPLICATION_JSON), labelsJson)
-    val namespaceRequestBody = RequestBody.create(
-      okhttp3.MediaType.parse(MediaType.TEXT_PLAIN), namespace)
-    val kubernetesCredentials = PodMonitoringCredentials(None, None, None)
-    val kubernetesCredentialsString = OBJECT_MAPPER.writer()
-      .writeValueAsString(kubernetesCredentials)
-    val kubernetesCredentialsBody = RequestBody.create(
-        okhttp3.MediaType.parse(MediaType.APPLICATION_JSON), kubernetesCredentialsString)
+        okhttp3.MediaType.parse(MediaType.MULTIPART_FORM_DATA), resourcesBytes)
     val uploadResponse = retrofitService.uploadResources(
-      labelsRequestBody, namespaceRequestBody, resourcesRequestBody, kubernetesCredentialsBody)
+      resourcesRequestBody, resourcesOwnerRequestBody)
     val resourceIdentifier = getTypedResponseResult(uploadResponse)
     checkResponseBodyBytesMatches(
       retrofitService.downloadResources(

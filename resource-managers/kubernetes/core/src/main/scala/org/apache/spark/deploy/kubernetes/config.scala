@@ -290,11 +290,12 @@ package object config extends Logging {
       .intConf
       .createWithDefault(10000)
 
-  private[spark] val RESOURCE_STAGING_SERVER_RESOURCE_TTL =
-    ConfigBuilder("spark.kubernetes.resourceStagingServer.resourceTtl")
-      .doc("Time for which resources should remain on the resource staging server before they" +
-        " cleaned up. Note that this is the time period after the resource staging server first" +
-        " detects that no pods are present that are using their mounted resources.")
+  private[spark] val RESOURCE_STAGING_SERVER_INITIAL_ACCESS_EXPIRATION_TIMEOUT =
+    ConfigBuilder("spark.kubernetes.resourceStagingServer.initialAccessExpirationTimeout")
+      .doc("The resource staging server will wait for any resource bundle to be accessed for a" +
+        " first time for this period. If this timeout expires before the resources are accessed" +
+        " the first time, the resources are cleaned up under the assumption that the dependents" +
+        " of the given resource bundle failed to launch at all.")
       .timeConf(TimeUnit.MILLISECONDS)
       .createWithDefaultString("30m")
 

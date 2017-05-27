@@ -33,17 +33,16 @@ import org.apache.spark.util.Utils
 
 private[spark] class ResourceStagingServiceImpl(
       stagedResourcesStore: StagedResourcesStore,
-      stagedResourcesExpirationManager: StagedResourcesExpirationManager)
+      stagedResourcesCleaner: StagedResourcesCleaner)
     extends ResourceStagingService with Logging {
 
   override def uploadResources(
-      podLabels: Map[String, String],
-      podNamespace: String,
       resources: InputStream,
-      kubernetesCredentials: PodMonitoringCredentials): SubmittedResourceIdAndSecret = {
-    val stagedResources = stagedResourcesStore.addResources(podNamespace, resources)
-    stagedResourcesExpirationManager.monitorResourceForExpiration(
-      stagedResources.resourceId, podNamespace, podLabels, kubernetesCredentials)
+      resourcesOwner: StagedResourcesOwner): SubmittedResourceIdAndSecret = {
+    val stagedResources = stagedResourcesStore.addResources(
+        resourcesOwner.ownerNamespace, resources)
+    stagedResourcesCleaner.registerResourceForCleaning(
+      stagedResources.resourceId, resourcesOwner)
     SubmittedResourceIdAndSecret(stagedResources.resourceId, stagedResources.resourceSecret)
   }
 
@@ -53,6 +52,7 @@ private[spark] class ResourceStagingServiceImpl(
     if (!resource.resourceSecret.equals(resourceSecret)) {
       throw new NotAuthorizedException(s"Unauthorized to download resource with id $resourceId")
     }
+    stagedResourcesCleaner.markResourceAsUsed(resourceId)
     new StreamingOutput {
       override def write(outputStream: OutputStream) = {
         Files.copy(resource.resourcesFile, outputStream)

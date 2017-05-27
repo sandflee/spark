@@ -101,23 +101,24 @@ object ResourceStagingServer {
     val apiServerUri = sparkConf.get(RESOURCE_STAGING_SERVER_API_SERVER_URL)
     val caCertFile = sparkConf.get(RESOURCE_STAGING_SERVER_API_SERVER_CA_CERT_FILE)
         .map(new File(_))
-    val expiredResourceTtlMs = sparkConf.get(RESOURCE_STAGING_SERVER_RESOURCE_TTL)
+    val initialAccessExpirationMs = sparkConf.get(
+        RESOURCE_STAGING_SERVER_INITIAL_ACCESS_EXPIRATION_TIMEOUT)
     val resourceCleanupIntervalMs = sparkConf.get(RESOURCE_STAGING_SERVER_CLEANUP_INTERVAL)
     val dependenciesRootDir = Utils.createTempDir(namePrefix = "local-application-dependencies")
     val kubernetesClientProvider = new ResourceStagingServiceKubernetesClientProviderImpl(
         apiServerUri, caCertFile)
     val stagedResourcesStore = new StagedResourcesStoreImpl(dependenciesRootDir)
-    val stagedResourcesExpirationManager = new StagedResourcesExpirationManagerImpl(
+    val stagedResourcesCleaner = new StagedResourcesCleanerImpl(
       kubernetesClientProvider = kubernetesClientProvider,
       stagedResourcesStore = stagedResourcesStore,
-      expirationExecutorService = ThreadUtils
+      cleanupExecutorService = ThreadUtils
           .newDaemonSingleThreadScheduledExecutor("resource-expiration"),
       clock = new SystemClock(),
-      expiredResourceTtlMs = expiredResourceTtlMs,
+      initialAccessExpirationMs = initialAccessExpirationMs,
       resourceCleanupIntervalMs = resourceCleanupIntervalMs)
-    stagedResourcesExpirationManager.startMonitoringForExpiredResources()
+    stagedResourcesCleaner.start()
     val serviceInstance = new ResourceStagingServiceImpl(
-        stagedResourcesStore, stagedResourcesExpirationManager)
+        stagedResourcesStore, stagedResourcesCleaner)
     val sslOptionsProvider = new ResourceStagingServerSslOptionsProviderImpl(sparkConf)
     val server = new ResourceStagingServer(
       port = sparkConf.get(RESOURCE_STAGING_SERVER_PORT),

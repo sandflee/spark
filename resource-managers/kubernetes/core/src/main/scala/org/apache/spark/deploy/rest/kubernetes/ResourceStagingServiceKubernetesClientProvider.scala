@@ -29,7 +29,7 @@ import org.apache.spark.util.ThreadUtils
 private[spark] trait ResourceStagingServiceKubernetesClientProvider {
   def getKubernetesClient(
       namespace: String,
-      credentials: PodMonitoringCredentials): KubernetesClient
+      credentials: StagedResourcesOwnerMonitoringCredentials): KubernetesClient
 }
 
 private class OptionConfigurableConfigBuilder(configBuilder: ConfigBuilder) {
@@ -53,7 +53,8 @@ private[spark] class ResourceStagingServiceKubernetesClientProviderImpl(
   private val dispatcher = new Dispatcher(
       ThreadUtils.newDaemonCachedThreadPool("kubernetes-dispatcher"))
 
-  override def getKubernetesClient(namespace: String, credentials: PodMonitoringCredentials)
+  override def getKubernetesClient(
+      namespace: String, credentials: StagedResourcesOwnerMonitoringCredentials)
       : KubernetesClient = {
     val clientConfig = new OptionConfigurableConfigBuilder(new ConfigBuilder()
       .withMasterUrl(apiServerUrl)

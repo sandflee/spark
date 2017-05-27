@@ -28,7 +28,7 @@ import retrofit2.Call
 
 import org.apache.spark.{SparkException, SSLOptions}
 import org.apache.spark.deploy.kubernetes.CompressionUtils
-import org.apache.spark.deploy.rest.kubernetes.{PodMonitoringCredentials, ResourceStagingServiceRetrofit, RetrofitClientFactory}
+import org.apache.spark.deploy.rest.kubernetes.{ResourceStagingServiceRetrofit, RetrofitClientFactory, StagedResourcesOwner, StagedResourcesOwnerMonitoringCredentials, StagedResourcesOwnerType}
 import org.apache.spark.util.Utils
 
 private[spark] trait SubmittedDependencyUploader {
@@ -86,31 +86,28 @@ private[spark] class SubmittedDependencyUploaderImpl(
     val clientCertBase64 = clientCertFile.map(f => BASE_64.encode(Files.toByteArray(f)))
     val oauthTokenBase64 = oauthToken.map(token => BASE_64.encode(token.getBytes(Charsets.UTF_8)))
 
-    val kubernetesCredentialsString = OBJECT_MAPPER.writer()
-      .writeValueAsString(PodMonitoringCredentials(
+    val ownerMonitoringCredentials = StagedResourcesOwnerMonitoringCredentials(
         clientKeyDataBase64 = clientKeyBase64,
         clientCertDataBase64 = clientCertBase64,
-        oauthTokenBase64 = oauthTokenBase64))
-    val labelsAsString = OBJECT_MAPPER.writer().writeValueAsString(podLabels)
+        oauthTokenBase64 = oauthTokenBase64)
+    val stagedResourcesOwner = StagedResourcesOwner(
+      ownerNamespace = podNamespace,
+      ownerLabels = podLabels,
+      ownerMonitoringCredentials = ownerMonitoringCredentials,
+      ownerType = StagedResourcesOwnerType.Pod)
 
+    val stagedResourcesOwnerString = OBJECT_MAPPER.writeValueAsString(stagedResourcesOwner)
+    val stagedResourcesOwnerBody = RequestBody.create(
+      okhttp3.MediaType.parse(MediaType.APPLICATION_JSON), stagedResourcesOwnerString)
     val filesRequestBody = RequestBody.create(
-      okhttp3.MediaType.parse(MediaType.MULTIPART_FORM_DATA), filesTgz)
-
-    val kubernetesCredentialsBody = RequestBody.create(
-      okhttp3.MediaType.parse(MediaType.APPLICATION_JSON), kubernetesCredentialsString)
-
-    val namespaceRequestBody = RequestBody.create(
-      okhttp3.MediaType.parse(MediaType.TEXT_PLAIN), podNamespace)
-
-    val labelsRequestBody = RequestBody.create(
-      okhttp3.MediaType.parse(MediaType.APPLICATION_JSON), labelsAsString)
+        okhttp3.MediaType.parse(MediaType.MULTIPART_FORM_DATA), filesTgz)
 
     val service = retrofitClientFactory.createRetrofitClient(
       stagingServerUri,
       classOf[ResourceStagingServiceRetrofit],
       stagingServiceSslOptions)
     val uploadResponse = service.uploadResources(
-      labelsRequestBody, namespaceRequestBody, filesRequestBody, kubernetesCredentialsBody)
+      resources = filesRequestBody, resourcesOwner = stagedResourcesOwnerBody)
     getTypedResponseResult(uploadResponse)
   }
 
