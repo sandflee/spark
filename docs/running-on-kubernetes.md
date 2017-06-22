@@ -758,6 +758,26 @@ from the other deployment modes. See the [configuration page](configuration.html
     Specify the hard cpu limit for a single executor pod
   </td>
 </tr>
+<tr>
+  <td><code>spark.kubernetes.node.selectors.[labelKey]</code></td> 
+  <td>(none)</td>
+  <td>
+    Adds to the node selector of the driver pod and executor pods, with key <code>labelKey</code> and the value as the 
+    configuration's value. For example, setting <code>spark.kubernetes.node.selectors.identifier</code> to <code>myIdentifier</code>
+    will result in the driver pod and executors having a node selector with key <code>identifier</code> and value 
+    <code>myIdentifier</code>. Multiple node selector keys can be added by setting multiple configurations with this prefix.
+  </td>
+</tr>
+<tr>
+  <td><code>spark.kubernetes.node.selectors</code></td>
+  <td><code>(none)</code></td>
+  <td>
+    <i>Deprecated.</i> Use <code>spark.kubernetes.node.selectors.<labelKey></code> instead which supports
+    <code>=</code> and <code>,</code> characters in label values.
+    Specify the node selector for the driver pod and executor pods.  This should be a comma-separated list of
+    label key-value pairs, where each label is in the format <code>key=value</code>
+  </td>
+</tr>
 </table>
 
 

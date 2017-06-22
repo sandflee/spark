@@ -104,6 +104,13 @@ private[spark] class Client(
         SPARK_APP_ID_LABEL -> kubernetesAppId,
         SPARK_ROLE_LABEL -> SPARK_POD_DRIVER_ROLE)
 
+    val nodeSelector =
+      ConfigurationUtils.combinePrefixedKeyValuePairsWithDeprecatedConf(
+        sparkConf,
+        KUBERNETES_NODE_SELECTORS_PREFIX,
+        KUBERNETES_NODE_SELECTORS,
+        "node-selector")
+
     val driverExtraClasspathEnv = driverExtraClasspath.map { classPath =>
       new EnvVarBuilder()
         .withName(ENV_SUBMIT_EXTRA_CLASSPATH)
@@ -151,6 +158,7 @@ private[spark] class Client(
         .endMetadata()
       .withNewSpec()
         .withRestartPolicy("Never")
+        .withNodeSelector(nodeSelector.asJava)
         .addToContainers(driverContainer)
         .endSpec()
 
